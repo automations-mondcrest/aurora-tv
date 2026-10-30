@@ -1,5 +1,5 @@
 {
   "version": "1.7.5",
-  "apk": "https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/AuroraHome.apk",
+  "apk": "https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/AuroraHome-1.7.5.apk",
   "notes": "Fixes 1.7.4, which was published without its app code. Settings shows only screens that do something; diagnostics shows whether network debugging is listening."
 }

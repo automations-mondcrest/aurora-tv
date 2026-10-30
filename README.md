@@ -79,7 +79,9 @@ into `app/assets/index.html` for the TV (bundled fonts, photos as files, CSS tha
 Android WebViews understand, and the native bridge).
 
 To publish an update, bump `versionName`/`versionCode` in `app/AndroidManifest.xml`,
-replace `release/AuroraHome.apk` and update `release/latest.json`.
+copy the APK to both `release/AuroraHome.apk` and `release/AuroraHome-<version>.apk`, and
+point `release/latest.json` at the versioned file (GitHub's raw file cache can serve an old
+`AuroraHome.apk` for a few minutes; a new filename avoids that).
 
 Updates only install over an existing copy when they are signed with the same key.
 Keep your keystore private and never commit it.
