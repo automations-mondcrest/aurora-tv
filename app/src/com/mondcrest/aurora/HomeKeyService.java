@@ -32,8 +32,15 @@ public class HomeKeyService extends AccessibilityService {
         return c.contains("dreamactivity") || p.equals("com.android.dreams.basic");
     }
 
+    private long watchSourceUntil = 0;
+
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_TV_INPUT && event.getAction() == KeyEvent.ACTION_UP) {
+            // The next screen to open is this TV's input menu: remember it for Aurora's HDMI buttons.
+            watchSourceUntil = System.currentTimeMillis() + 4000;
+            return false;
+        }
         if (event.getKeyCode() != KeyEvent.KEYCODE_HOME) return false;
         if (event.getAction() == KeyEvent.ACTION_UP) openAurora("fromHomeKey");
         return true; // swallow both down and up so the built-in launcher never opens
@@ -47,6 +54,11 @@ public class HomeKeyService extends AccessibilityService {
         if (pkg == null) return;
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         log(sp, pkg, cls);
+        if (System.currentTimeMillis() < watchSourceUntil && !pkg.equals(getPackageName())
+                && !isAdScreen(pkg, cls) && cls.contains(".") && !cls.startsWith("android.")) {
+            watchSourceUntil = 0;
+            sp.edit().putString("srcPkg", pkg).putString("srcCls", cls).apply();
+        }
         if (sp.getBoolean("blockAds", true) && isAdScreen(pkg, cls)) {
             long now = System.currentTimeMillis();
             if (now - lastBounce < 1500) return;

@@ -222,23 +222,146 @@ public class MainActivity extends Activity {
             return true;
         }
 
+        /**
+         * Switches to a TV input. Order:
+         * 1. Android TV's standard way (works on TVs with Live Channels: Sony, TCL, Philips...).
+         * 2. The TV's own input menu that Aurora learned when you pressed Source.
+         * 3. An input/source screen found on the TV by name.
+         */
         @JavascriptInterface
         public boolean openInput(final String id, final boolean passthrough) {
             act.runOnUiThread(new Runnable() {
                 public void run() {
+                    PackageManager pm = act.getPackageManager();
                     Uri uri = passthrough
                             ? TvContract.buildChannelUriForPassthroughInput(id)
                             : TvContract.buildChannelsUriForInput(id);
-                    Intent i = new Intent(Intent.ACTION_VIEW, uri);
-                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    try {
-                        act.startActivity(i);
-                    } catch (ActivityNotFoundException e) {
-                        toast("This TV doesn't allow switching inputs from here — use the Source button on the remote");
+                    Intent std = new Intent(Intent.ACTION_VIEW, uri);
+                    std.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    if (pm.resolveActivity(std, 0) != null) {
+                        try { act.startActivity(std); return; } catch (Exception ignored) { }
                     }
+                    android.content.SharedPreferences sp = prefs();
+                    String sp1 = sp.getString("srcPkg", null), sc1 = sp.getString("srcCls", null);
+                    if (sp1 != null && sc1 != null) {
+                        try {
+                            Intent m = cmp(sp1, sc1);
+                            m.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            act.startActivity(m);
+                            toast("Pick the input in your TV's menu");
+                            return;
+                        } catch (Exception ignored) { }
+                    }
+                    for (String[] c : findScreens("(?i)(inputsource|sourceselect|sourcelist|signalsource|sourceactivity|inputactivity|hdmiactivity|sourcemenu)")) {
+                        try {
+                            Intent m = cmp(c[0], c[1]);
+                            m.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            act.startActivity(m);
+                            toast("Pick the input in your TV's menu");
+                            return;
+                        } catch (Exception ignored) { }
+                    }
+                    toast("Press the Source button on your remote once. Aurora will learn your TV's input menu and open it from here next time.");
                 }
             });
             return true;
+        }
+
+        /** Exported, permission-free activities anywhere on the TV whose class name matches. */
+        private java.util.List<String[]> findScreens(String regex) {
+            java.util.List<String[]> out = new java.util.ArrayList<String[]>();
+            java.util.regex.Pattern want = java.util.regex.Pattern.compile(regex);
+            PackageManager pm = act.getPackageManager();
+            for (ApplicationInfo app : pm.getInstalledApplications(0)) {
+                android.content.pm.PackageInfo pi;
+                try { pi = pm.getPackageInfo(app.packageName, PackageManager.GET_ACTIVITIES); } catch (Throwable t) { continue; }
+                if (pi.activities == null) continue;
+                for (android.content.pm.ActivityInfo ai : pi.activities) {
+                    if (!ai.exported || !ai.enabled) continue;
+                    if (ai.permission != null && ai.permission.length() > 0) continue;
+                    if (want.matcher(ai.name).find()) out.add(new String[]{ai.packageName, ai.name, String.valueOf(ai.loadLabel(pm))});
+                }
+            }
+            return out;
+        }
+
+        @JavascriptInterface
+        public String inputScreens() {
+            JSONArray a = new JSONArray();
+            try {
+                for (String[] c : findScreens("(?i)(source|input|hdmi|signal|livetv|tvplayer|tvview|channel)")) {
+                    if (c[0].startsWith("com.android.providers")) continue;
+                    JSONObject o = new JSONObject();
+                    o.put("pkg", c[0]); o.put("cls", c[1]); o.put("label", c[2]);
+                    a.put(o);
+                }
+            } catch (Exception ignored) { }
+            return a.toString();
+        }
+
+        @JavascriptInterface
+        public void setSource(String pkg, String cls) {
+            prefs().edit().putString("srcPkg", pkg).putString("srcCls", cls).apply();
+        }
+
+        @JavascriptInterface
+        public String learnedSource() {
+            android.content.SharedPreferences sp = prefs();
+            String p = sp.getString("srcPkg", null);
+            return p == null ? "" : p + "/" + sp.getString("srcCls", "");
+        }
+
+        /**
+         * Every settings app on the TV, each with the screen it opens. Lets the menu show
+         * the real ones instead of two buttons that land in the same place.
+         */
+        @JavascriptInterface
+        public String settingsApps() {
+            JSONArray out = new JSONArray();
+            try {
+                PackageManager pm = act.getPackageManager();
+                Set<String> seenTargets = new HashSet<String>();
+                // What Android itself opens for "Settings" goes first.
+                ResolveInfo def = pm.resolveActivity(new Intent(Settings.ACTION_SETTINGS), 0);
+                if (def != null && def.activityInfo != null) {
+                    addSetting(out, seenTargets, pm, def.activityInfo.packageName, def.activityInfo.name, true);
+                }
+                String[][] known = {
+                        {"com.android.tv.settings", "com.android.tv.settings.MainSettings"},
+                        {"com.android.tv.settings", "com.android.tv.settings.TvSettingsActivity"},
+                        {"com.android.settings", "com.android.settings.Settings"}};
+                for (String[] k : known) addSetting(out, seenTargets, pm, k[0], k[1], false);
+                for (ApplicationInfo app : pm.getInstalledApplications(0)) {
+                    String p = app.packageName.toLowerCase();
+                    if (!(p.contains("setting") || p.contains("tvmenu") || p.endsWith(".menu"))) continue;
+                    if (p.startsWith("com.android.providers") || p.equals(act.getPackageName())) continue;
+                    Intent li = null;
+                    try { li = pm.getLeanbackLaunchIntentForPackage(app.packageName); } catch (Throwable ignored) { }
+                    if (li == null) li = pm.getLaunchIntentForPackage(app.packageName);
+                    if (li != null && li.getComponent() != null) {
+                        addSetting(out, seenTargets, pm, li.getComponent().getPackageName(), li.getComponent().getClassName(), false);
+                    }
+                }
+            } catch (Exception ignored) { }
+            return out.toString();
+        }
+
+        private void addSetting(JSONArray out, Set<String> seen, PackageManager pm, String pkg, String cls, boolean isDefault) {
+            try {
+                android.content.pm.ActivityInfo ai = pm.getActivityInfo(new android.content.ComponentName(pkg, cls), 0);
+                if (!ai.exported && !isDefault) return;
+                String key = pkg + "/" + cls;
+                if (seen.contains(key)) return;
+                // Same app twice (e.g. two entry points into one menu) counts once.
+                for (int k = 0; k < out.length(); k++) if (out.getJSONObject(k).optString("pkg").equals(pkg)) return;
+                seen.add(key);
+                JSONObject o = new JSONObject();
+                o.put("pkg", pkg); o.put("cls", cls);
+                o.put("app", String.valueOf(ai.applicationInfo.loadLabel(pm)));
+                o.put("label", String.valueOf(ai.loadLabel(pm)));
+                o.put("default", isDefault);
+                out.put(o);
+            } catch (Exception ignored) { }
         }
 
         @JavascriptInterface

@@ -1,5 +1,5 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "apk": "https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/AuroraHome.apk",
-  "notes": "20 rotating photos, calm idle screen, ad-screensaver blocker, self-update, uninstall from the app library."
+  "notes": "Settings menu lists the TV's real settings apps. HDMI buttons use Android TV inputs where supported, otherwise the TV's own input menu, learned when you press Source."
 }

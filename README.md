@@ -55,7 +55,10 @@ reads what is on screen or anything you type.
 
 ## Known limits
 
-- Input buttons (HDMI, AV) can't switch inputs on some TVs. Use the remote's Source button.
+- Input buttons (HDMI, AV) switch directly on TVs that support Android TV inputs. On TVs that
+  don't (many CVTE/budget sets), press the remote's Source button once: Aurora learns the TV's
+  input menu and its HDMI buttons open that menu from then on. You can also pick it by hand:
+  hold OK on Settings → Choose the TV's input menu.
 - Apps built into the TV can't be uninstalled without root.
 - The look depends on the TV's built-in web engine. Older engines skip the blur effects.
 
