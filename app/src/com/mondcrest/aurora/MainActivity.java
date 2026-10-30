@@ -660,6 +660,14 @@ public class MainActivity extends Activity {
                 o.put("adb", adb == 1);
                 o.put("tcpPort", sysProp("service.adb.tcp.port") + "/" + sysProp("persist.adb.tcp.port"));
                 o.put("devMode", Settings.Global.getInt(act.getContentResolver(), "development_settings_enabled", 0) == 1);
+                boolean listening = false;
+                try {
+                    java.net.Socket s = new java.net.Socket();
+                    s.connect(new java.net.InetSocketAddress("127.0.0.1", 5555), 700);
+                    listening = true;
+                    s.close();
+                } catch (Exception ignored) { }
+                o.put("adbListening", listening);
             } catch (Exception ignored) { }
             return o.toString();
         }

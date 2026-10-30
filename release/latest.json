@@ -1,5 +1,5 @@
 {
-  "version": "1.7.3",
+  "version": "1.7.4",
   "apk": "https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/AuroraHome.apk",
-  "notes": "Test direct HDMI switching (hold OK on Settings). Copy TV system apps to USB for troubleshooting."
+  "notes": "Settings no longer shows the TV picture menu that only switched inputs. Diagnostics show whether network debugging is listening."
 }
