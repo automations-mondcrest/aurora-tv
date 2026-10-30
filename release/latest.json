@@ -1,5 +1,5 @@
 {
   "version": "1.7.4",
   "apk": "https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/AuroraHome.apk",
-  "notes": "Settings no longer shows the TV picture menu that only switched inputs. Diagnostics show whether network debugging is listening."
+  "notes": "Settings shows only screens that do something. Diagnostics shows whether network debugging is listening."
 }

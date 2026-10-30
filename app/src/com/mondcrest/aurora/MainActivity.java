@@ -660,6 +660,13 @@ public class MainActivity extends Activity {
                 o.put("adb", adb == 1);
                 o.put("tcpPort", sysProp("service.adb.tcp.port") + "/" + sysProp("persist.adb.tcp.port"));
                 o.put("devMode", Settings.Global.getInt(act.getContentResolver(), "development_settings_enabled", 0) == 1);
+                // Is anything actually listening for network debugging on this TV?
+                boolean listening = false;
+                java.net.Socket s = new java.net.Socket();
+                try { s.connect(new java.net.InetSocketAddress("127.0.0.1", 5555), 600); listening = true; }
+                catch (Exception ignored) { }
+                finally { try { s.close(); } catch (Exception ignored) { } }
+                o.put("adbListening", listening);
                 boolean listening = false;
                 try {
                     java.net.Socket s = new java.net.Socket();

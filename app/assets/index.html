@@ -488,10 +488,10 @@ var PHOTOS = [{"id": "01", "name": "Mountains over the lake", "credit": "Peter T
     if(NATIVE){ try{ apps=JSON.parse(window.Aurora.settingsApps()); }catch(e){} }
     else apps=[{pkg:'com.cvte.settings',cls:'com.cvte.settings.Settings',app:'System Setting',label:'System Setting',default:true},
                {pkg:'com.android.tv.settings',cls:'com.android.tv.settings.MainSettings',app:'Settings',label:'Settings'}];
+    apps=apps.filter(function(a){ return !/tv\.?setting/i.test(a.pkg); });
     var rows=apps.map(function(a){
       var name=a.label||a.app||a.pkg, note=a.pkg;
-      if(/tv\.?setting/i.test(a.pkg)){ name='Picture & sound'; note='Opens on top of live TV, so it switches to your last input'; }
-      else if(a['default']){ name='System settings'; note='Network, apps, storage, time'; }
+      if(a['default']){ name='Android settings'; note='This TV\u2019s version: network, apps, storage, time'; }
       return {t:name+'<small>'+note+'</small>', i:I.gear,
         f:function(){ if(NATIVE){ try{ window.Aurora.openActivity(a.pkg,a.cls); }catch(e){} } else toast('Opens on the TV'); return false; }};
     });
@@ -557,14 +557,12 @@ var PHOTOS = [{"id": "01", "name": "Mountains over the lake", "credit": "Peter T
     if(!NATIVE){ rows.push({t:'Network and debug info shows on the TV', i:I.grid, off:true, f:function(){}}); return rows; }
     var n={}; try{ n=JSON.parse(window.Aurora.netInfo()); }catch(e){}
     var ads=0; try{ ads=window.Aurora.adsBlocked(); }catch(e){}
-    rows.push({t:'Aurora v'+window.Aurora.version()+' · IP '+(n.ip||'unknown')+'<small>Developer mode '+(n.devMode?'on':'off')+' · USB debugging '+(n.adb?'on':'off')+' · network debugging port '+(n.tcpPort||'none')+'</small>', i:I.grid, info:true, f:function(){}});
+    rows.push({t:'Aurora v'+window.Aurora.version()+' · IP '+(n.ip||'unknown')+'<small>Developer mode '+(n.devMode?'on':'off')+' · USB debugging '+(n.adb?'on':'off')+' · network debugging '+(n.adbListening?'LISTENING on port 5555':'not listening')+'</small>', i:I.grid, info:true, f:function(){}});
     rows.push({t:'Ad screens closed so far: '+ads, i:I.x, info:true, f:function(){}});
     rows.push({t:'Recently seen screens', i:I.grid, f:function(){ setTimeout(openSeen,30); return false; }});
     var src=''; try{ src=window.Aurora.learnedSource(); }catch(e){}
     rows.push({t:'HDMI buttons open: '+(src?src.split('/').pop().split('.').pop():'not learned yet')+'<small>'+(src||'Press Source on the remote once, or pick a screen below')+'</small>', i:I.grid, info:true, f:function(){}});
     rows.push({t:'Choose the TV\u2019s input menu', i:I.grid, f:function(){ setTimeout(openInputs,30); return false; }});
-    rows.push({t:'Test direct HDMI switching', i:I.star, f:function(){ setTimeout(openDirectTest,30); return false; }});
-    rows.push({t:'Copy TV system apps to the USB stick<small>For troubleshooting. Plug the stick into the TV first</small>', i:I.grid, f:function(){ try{ window.Aurora.exportSystemApps(); }catch(e){} toast('Copying\u2026'); return false; }});
     return rows;
   }
   function openInputs(){

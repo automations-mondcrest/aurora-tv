@@ -61,9 +61,6 @@ reads what is on screen or anything you type.
   don't (many CVTE/budget sets), press the remote's Source button once: Aurora learns the TV's
   input menu and its HDMI buttons open that menu from then on. You can also pick it by hand:
   hold OK on Settings → Choose the TV's input menu.
-  To try switching straight to an input, hold OK on Settings → Test direct HDMI switching,
-  pick an entry, then press Home. If it went straight to that input, choose "Yes" and the
-  HDMI buttons will use it from then on.
 - Apps built into the TV can't be uninstalled without root.
 - The look depends on the TV's built-in web engine. Older engines skip the blur effects.
 
