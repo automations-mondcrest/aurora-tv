@@ -22,7 +22,9 @@ ads. It should work on most Android TV sets running Android 5 or newer.
 - **Calm screen.** After 3 minutes without a button press the dock fades away and
   only the photo and clock stay. Any button brings it back.
 - **Self-update.** Settings → Check for updates reads `release/latest.json` in this repo,
-  downloads the newer APK and opens the TV's installer.
+  downloads the newer APK and opens the TV's installer. On TVs that block installs from
+  other apps (many CVTE sets), Aurora saves the update to the Download folder and opens the
+  TV's file browser, so you finish the install there with one press of OK.
 
 ## Install
 

@@ -1,5 +1,5 @@
 {
-  "version": "1.6",
+  "version": "1.7.1",
   "apk": "https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/AuroraHome.apk",
-  "notes": "Settings menu lists the TV's real settings apps. HDMI buttons use Android TV inputs where supported, otherwise the TV's own input menu, learned when you press Source."
+  "notes": "Updates work on TVs that block app installs: Aurora saves the update to the Download folder and opens the TV's file browser so you can install it there."
 }

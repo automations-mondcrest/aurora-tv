@@ -469,6 +469,17 @@ var PHOTOS = __PHOTOS__;
     if(r.error){ toast(r.error); return; }
     if(r.needsPermission){ toast('Allow Aurora Home to install updates, then try again'); return; }
     if(r.downloaded){ toast('Downloaded — press Install on the next screen'); return; }
+    if(r.handoff){
+      var host=document.querySelector('#dockwrap [data-key="_set"]')||dockEl.firstChild;
+      if(mode==='pop') closeEdit(false); else if(mode==='lib') closeLib();
+      menu(host,'Update downloaded — finish it in your file browser',[
+        {t:'1. Open '+(r.browser||'your TV’s file browser')+'<small>'+(r.browser?'Aurora tried to open it for you':'The one you used to install from USB')+'</small>', i:I.grid, off:true, f:function(){}},
+        {t:'2. Go to '+r.where+'<small>On the TV’s own storage, not the USB stick</small>', i:I.grid, off:true, f:function(){}},
+        {t:'3. Select '+r.file+' and press OK, then Install', i:I.star, off:true, f:function(){}},
+        {t:'Got it', i:I.left, f:function(){ return false; }}
+      ]);
+      return;
+    }
     if(!r.newer){ toast('You’re on the latest version (v'+(r.current||'?')+')'); return; }
     pendingUpdate=r;
     var host=document.querySelector('#dockwrap [data-key="_set"]')||dockEl.firstChild;

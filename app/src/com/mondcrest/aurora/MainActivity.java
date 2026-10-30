@@ -90,6 +90,108 @@ public class MainActivity extends Activity {
                         | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
     }
 
+    /* ------------- update hand-off to the TV's file browser ------------- */
+
+    private String pendingUrl = null;
+    static final int REQ_STORAGE = 71;
+
+    void handoffUpdate(String url) {
+        pendingUrl = url;
+        if (android.os.Build.VERSION.SDK_INT >= 23
+                && checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQ_STORAGE);
+            return;
+        }
+        startHandoff();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(code, perms, results);
+        if (code == REQ_STORAGE && pendingUrl != null) startHandoff();
+    }
+
+    private void startHandoff() {
+        final String url = pendingUrl;
+        pendingUrl = null;
+        if (url == null) return;
+        new Thread(new Runnable() {
+            public void run() {
+                java.io.File dest;
+                boolean shared = android.os.Build.VERSION.SDK_INT < 23
+                        || checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+                if (shared) {
+                    java.io.File dir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS);
+                    dir.mkdirs();
+                    dest = new java.io.File(dir, "AuroraHome-update.apk");
+                } else {
+                    dest = new java.io.File(getExternalFilesDir(null), "AuroraHome-update.apk");
+                }
+                try {
+                    Bridge.download(url, dest);
+                } catch (Exception e) {
+                    js2("{\"error\":\"Download failed\"}");
+                    return;
+                }
+                final String where = shared ? "Download" : "Android/data/" + getPackageName() + "/files";
+                final String opened = openFileBrowser(dest);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        Toast.makeText(MainActivity.this, "Update saved. Open " + where + " > AuroraHome-update.apk and press OK to install", Toast.LENGTH_LONG).show();
+                    }
+                });
+                JSONObject o = new JSONObject();
+                try {
+                    o.put("handoff", true);
+                    o.put("where", where);
+                    o.put("file", dest.getName());
+                    o.put("browser", opened == null ? "" : opened);
+                } catch (Exception ignored) { }
+                js2(o.toString());
+            }
+        }).start();
+    }
+
+    private void js2(final String json) {
+        runOnUiThread(new Runnable() {
+            public void run() { js("window.auroraUpdateStatus && window.auroraUpdateStatus(" + JSONObject.quote(json) + ")"); }
+        });
+    }
+
+    /**
+     * Opens the TV's file browser: the app that opened the installer last time (from the
+     * screen log), else any app that looks like a file or media browser.
+     */
+    private String openFileBrowser(java.io.File f) {
+        PackageManager pm = getPackageManager();
+        java.util.List<String> cands = new java.util.ArrayList<String>();
+        try {
+            JSONArray seen = new JSONArray(getSharedPreferences(HomeKeyService.PREFS, MODE_PRIVATE).getString("seen", "[]"));
+            for (int k = 1; k < seen.length(); k++) {
+                if (seen.getJSONObject(k).optString("pkg").contains("packageinstaller")) {
+                    String prev = seen.getJSONObject(k - 1).optString("pkg");
+                    if (!prev.contains("packageinstaller") && !prev.equals(getPackageName()) && !cands.contains(prev)) cands.add(0, prev);
+                }
+            }
+        } catch (Exception ignored) { }
+        java.util.regex.Pattern looks = java.util.regex.Pattern.compile("(?i)(filemanager|fileexplorer|filebrowser|explorer|mediacenter|media\\.center|\\.files|documentsui|usb|localmedia|mediaplayer)");
+        for (ApplicationInfo a : pm.getInstalledApplications(0)) {
+            if (looks.matcher(a.packageName).find() && !cands.contains(a.packageName)) cands.add(a.packageName);
+        }
+        for (String pkg : cands) {
+            Intent i = null;
+            try { i = pm.getLeanbackLaunchIntentForPackage(pkg); } catch (Throwable ignored) { }
+            if (i == null) i = pm.getLaunchIntentForPackage(pkg);
+            if (i == null) continue;
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                startActivity(i);
+                return String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)));
+            } catch (Exception ignored) { }
+        }
+        return null;
+    }
+
     private void js(String code) {
         if (web != null && pageReady) web.evaluateJavascript(code, null);
     }
@@ -531,8 +633,13 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void installUpdate(final String url) {
             if (!canInstall()) {
-                openUnknownSources();
-                sendJs("window.auroraUpdateStatus && window.auroraUpdateStatus(" + JSONObject.quote("{\"needsPermission\":true}") + ")");
+                // Try the TV's own "install unknown apps" screen for Aurora first.
+                if (openUnknownSources()) {
+                    sendJs("window.auroraUpdateStatus && window.auroraUpdateStatus(" + JSONObject.quote("{\"needsPermission\":true}") + ")");
+                    return;
+                }
+                // Locked: hand the file to the TV's own file browser, which is allowed to install.
+                act.handoffUpdate(url);
                 return;
             }
             new Thread(new Runnable() {
@@ -569,22 +676,28 @@ public class MainActivity extends Activity {
             } catch (Throwable t) { return true; }
         }
 
-        private void openUnknownSources() {
-            act.runOnUiThread(new Runnable() {
-                public void run() {
-                    Intent[] tries = {
-                            new Intent("android.settings.MANAGE_UNKNOWN_APP_SOURCES", Uri.parse("package:" + act.getPackageName())),
-                            cmp("com.cvte.settings", "com.cvte.settings.Settings$ManageExternalSourcesActivity"),
-                            new Intent(Settings.ACTION_SECURITY_SETTINGS)};
-                    for (Intent i : tries) {
-                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        try { act.startActivity(i); toast("Allow Aurora Home to install updates, then press Back and try again"); return; }
-                        catch (Exception ignored) { }
-                    }
-                    toast("This TV blocks app installs from Aurora. Use the USB stick for updates.");
-                }
-            });
+        /** Opens the screen that lets Aurora install apps. Returns false if the TV has none. */
+        private boolean openUnknownSources() {
+            Uri me = Uri.parse("package:" + act.getPackageName());
+            Intent[] tries = {
+                    new Intent("android.settings.MANAGE_UNKNOWN_APP_SOURCES", me),
+                    withData(cmp("com.cvte.settings", "com.cvte.settings.Settings$ManageAppExternalSourcesActivity"), me),
+                    cmp("com.cvte.settings", "com.cvte.settings.Settings$ManageExternalSourcesActivity"),
+                    withData(cmp("com.android.settings", "com.android.settings.Settings$ManageAppExternalSourcesActivity"), me)};
+            PackageManager pm = act.getPackageManager();
+            for (Intent i : tries) {
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try {
+                    if (pm.resolveActivity(i, 0) == null) continue;
+                    act.startActivity(i);
+                    toast("Switch on Aurora Home here, press Back, then choose Check for updates again");
+                    return true;
+                } catch (Exception ignored) { }
+            }
+            return false;
         }
+
+        private static Intent withData(Intent i, Uri u) { i.setData(u); return i; }
 
         private void sendJs(final String code) {
             act.runOnUiThread(new Runnable() { public void run() { act.js(code); } });
@@ -617,7 +730,7 @@ public class MainActivity extends Activity {
             return bos.toString("UTF-8");
         }
 
-        private static void download(String u, java.io.File dest) throws Exception {
+        static void download(String u, java.io.File dest) throws Exception {
             for (int hop = 0; hop < 5; hop++) {
                 java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(u).openConnection();
                 c.setInstanceFollowRedirects(false);
