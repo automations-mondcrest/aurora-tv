@@ -358,6 +358,8 @@ public class MainActivity extends Activity {
         /* ---------------- self-update from GitHub releases ---------------- */
 
         static final String RELEASES = "https://api.github.com/repos/automations-mondcrest/aurora-tv/releases/latest";
+        /** Version file kept in the repo itself: {"version":"1.5","apk":"https://...","notes":"..."} */
+        static final String LATEST_JSON = "https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/latest.json";
 
         @JavascriptInterface
         public void checkUpdate() {
@@ -365,6 +367,20 @@ public class MainActivity extends Activity {
                 public void run() {
                     JSONObject r = new JSONObject();
                     try {
+                        // 1) version file in the repo
+                        try {
+                            JSONObject lj = new JSONObject(httpGet(LATEST_JSON + "?t=" + System.currentTimeMillis()));
+                            String tag = lj.optString("version", "").replaceFirst("^[vV]", "");
+                            String url = lj.optString("apk", "");
+                            r.put("latest", tag);
+                            r.put("current", version());
+                            r.put("url", url);
+                            r.put("newer", url.length() > 0 && newer(tag, version()));
+                            r.put("notes", lj.optString("notes", ""));
+                            sendJs("window.auroraUpdateStatus && window.auroraUpdateStatus(" + JSONObject.quote(r.toString()) + ")");
+                            return;
+                        } catch (Exception ignored) { }
+                        // 2) GitHub releases, if the repo uses them
                         String body = httpGet(RELEASES);
                         JSONObject rel = new JSONObject(body);
                         String tag = rel.optString("tag_name", "").replaceFirst("^[vV]", "");

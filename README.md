@@ -21,12 +21,12 @@ ads. It should work on most Android TV sets running Android 5 or newer.
   shows Aurora's calm clock screen instead. You can switch this off in Settings.
 - **Calm screen.** After 3 minutes without a button press the dock fades away and
   only the photo and clock stay. Any button brings it back.
-- **Self-update.** Settings → Check for updates downloads the newest release from this
-  repo and opens the TV's installer.
+- **Self-update.** Settings → Check for updates reads `release/latest.json` in this repo,
+  downloads the newer APK and opens the TV's installer.
 
 ## Install
 
-1. Download `AuroraHome.apk` from the [latest release](../../releases/latest).
+1. Download [`AuroraHome.apk`](https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/AuroraHome.apk) (also in the `release` folder).
 2. Copy it to the top level of a USB stick.
 3. Plug the stick into the TV, open the TV's file browser, select the APK and press OK.
 4. Press Home. If the TV asks which home screen to use, pick **Aurora Home** → **Always**.
@@ -72,6 +72,9 @@ sudo apt install aapt apksigner android-sdk-platform-23 dalvik-exchange zipalign
 `web/aurora.tpl.html` is the browser preview of the UI. `tools/make_tv_page.py` turns it
 into `app/assets/index.html` for the TV (bundled fonts, photos as files, CSS that old
 Android WebViews understand, and the native bridge).
+
+To publish an update, bump `versionName`/`versionCode` in `app/AndroidManifest.xml`,
+replace `release/AuroraHome.apk` and update `release/latest.json`.
 
 Updates only install over an existing copy when they are signed with the same key.
 Keep your keystore private and never commit it.
