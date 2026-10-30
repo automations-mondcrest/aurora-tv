@@ -1,5 +1,5 @@
 {
-  "version": "1.7.1",
+  "version": "1.7.2",
   "apk": "https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/AuroraHome.apk",
-  "notes": "Updates work on TVs that block app installs: Aurora saves the update to the Download folder and opens the TV's file browser so you can install it there."
+  "notes": "Long menus scroll properly on older TVs. Settings shows clear names (System settings, Picture & sound)."
 }
