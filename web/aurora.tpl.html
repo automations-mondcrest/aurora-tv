@@ -1,0 +1,615 @@
+<title>Aurora TV Home</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: an iPhone-style lockscreen for a 16:9 TV. Photo background in two
+     layers (full photo below, cut-out foreground above) with the clock sandwiched
+     between, so skylines pass in front of the digits. A glass dock of apps sits at
+     the bottom. Photos crossfade; random on power-on, new random every 5 minutes. */
+  :root{
+    --bg:#05060a;
+    --fg:#ffffff;
+    --muted:rgba(255,255,255,.78);
+    --glass:rgba(22,22,30,.34);
+    --glass-hi:rgba(255,255,255,.22);
+    --hair:rgba(255,255,255,.22);
+    --clock:rgba(255,255,255,.86);
+    --clock-top:11%;
+    color-scheme:dark;
+    --font-clock:"Outfit",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --font-ui:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --fade:1.6s;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-ui);overflow:hidden;
+    -webkit-font-smoothing:antialiased}
+
+  .scene{position:relative;width:100%;height:100%;overflow:hidden;background:var(--bg)}
+  .layer{position:absolute;inset:0;background-size:cover;background-position:center;
+    opacity:0;transition:opacity var(--fade) ease;will-change:opacity,transform}
+  .layer.on{opacity:1}
+  .bgl{z-index:1}
+  .fgl{z-index:3;pointer-events:none}
+  @media (prefers-reduced-motion:no-preference){
+    .layer.drift{animation:drift 300s linear forwards}
+  }
+  @keyframes drift{from{transform:scale(1.0)}to{transform:scale(1.08)}}
+  /* soft top + bottom vignette for legibility */
+  .shade{position:absolute;inset:0;z-index:2;pointer-events:none;
+    background:linear-gradient(180deg,rgba(0,0,0,.22) 0%,rgba(0,0,0,0) 28%,rgba(0,0,0,0) 60%,rgba(0,0,0,.45) 100%)}
+
+  /* clock — sits between the photo and its foreground */
+  .clock{position:absolute;left:0;right:0;top:var(--clock-top);z-index:2;text-align:center;
+    transition:top var(--fade) ease;pointer-events:none}
+  .date{font-weight:600;font-size:clamp(14px,2.6vh,26px);letter-spacing:.01em;color:var(--fg);
+    text-shadow:0 1px 12px rgba(0,0,0,.35);margin:0 0 .15em}
+  .time{font-family:var(--font-clock);font-weight:500;font-size:clamp(70px,31vh,330px);line-height:.88;
+    letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--clock);
+    transition:color var(--fade) ease;text-shadow:0 2px 26px rgba(0,0,0,.22),0 0 2px rgba(0,0,0,.08)}
+
+  /* status chips */
+  .status{position:absolute;z-index:4;top:max(14px,env(safe-area-inset-top,0px));
+    right:max(20px,env(safe-area-inset-right,0px));display:flex;gap:14px;align-items:center;
+    font-size:clamp(12px,1.9vh,16px);font-weight:600;text-shadow:0 1px 8px rgba(0,0,0,.4)}
+  .status svg{display:block}
+
+  /* dock */
+  .dockwrap{position:absolute;left:0;right:0;bottom:0;z-index:4;display:flex;flex-direction:column;
+    align-items:center;gap:clamp(10px,1.8vh,18px);
+    padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+    padding-bottom:max(clamp(14px,3vh,30px),env(safe-area-inset-bottom,0px))}
+  .dock{display:flex;gap:clamp(14px,2.2vw,28px);padding:clamp(12px,1.8vh,18px) clamp(16px,2.2vw,26px);
+    border-radius:clamp(26px,4vh,38px);background:var(--glass);border:1px solid var(--hair);
+    backdrop-filter:blur(26px) saturate(1.6);-webkit-backdrop-filter:blur(26px) saturate(1.6);
+    box-shadow:inset 0 1px 0 var(--glass-hi),0 20px 50px rgba(0,0,0,.35);max-width:100%;flex-wrap:wrap;justify-content:center;overflow:visible}
+  .dock::-webkit-scrollbar{display:none}
+  .sysrow{display:flex;gap:clamp(10px,1.4vw,16px);flex-wrap:wrap;justify-content:center}
+
+  .app{border:0;background:none;padding:0;cursor:pointer;color:var(--fg);display:flex;flex-direction:column;
+    align-items:center;gap:8px;outline:none;font:inherit;transition:transform .28s cubic-bezier(.22,.61,.36,1);flex:none}
+  .ico{width:clamp(54px,9.5vh,86px);aspect-ratio:1;border-radius:23%;display:grid;place-items:center;position:relative;
+    background:var(--tint);box-shadow:0 8px 20px rgba(0,0,0,.35);overflow:hidden;transition:box-shadow .28s}
+  .ico::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+    background:linear-gradient(160deg,rgba(255,255,255,.28),rgba(255,255,255,0) 45%);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+  .ico svg{width:58%;height:58%;position:relative;z-index:1}
+  .lbl{font-size:clamp(11px,1.8vh,14px);font-weight:600;color:var(--muted);white-space:nowrap;
+    text-shadow:0 1px 8px rgba(0,0,0,.5);transition:color .28s}
+  .pill{flex-direction:row;gap:8px;padding:8px 14px 8px 8px;border-radius:999px;background:var(--glass);
+    border:1px solid var(--hair);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+  .pill .ico{width:clamp(28px,4.4vh,38px);border-radius:50%;background:rgba(255,255,255,.16);box-shadow:none}
+  .pill .ico::after{display:none}
+  .pill .lbl{color:var(--fg);text-shadow:none}
+  .app[data-focused]{transform:translateY(-8px) scale(1.14)}
+  .app[data-focused] .ico{box-shadow:0 0 0 3px #fff,0 14px 36px rgba(0,0,0,.5),0 0 30px rgba(255,255,255,.35)}
+  .app[data-focused] .lbl{color:#fff}
+  .pill[data-focused]{transform:scale(1.08);background:rgba(255,255,255,.26);border-color:#fff}
+  .pill[data-focused] .ico{box-shadow:none}
+
+  .credit{position:absolute;z-index:4;left:max(18px,env(safe-area-inset-left,0px));
+    bottom:max(10px,env(safe-area-inset-bottom,0px));font-size:11px;color:rgba(255,255,255,.62);
+    text-shadow:0 1px 6px rgba(0,0,0,.6);max-width:30vw}
+  .hint{position:absolute;z-index:4;left:max(18px,env(safe-area-inset-left,0px));
+    top:max(14px,env(safe-area-inset-top,0px));font-size:12px;color:rgba(255,255,255,.75);
+    text-shadow:0 1px 8px rgba(0,0,0,.5);display:flex;gap:6px;align-items:center;flex-wrap:wrap;max-width:50vw}
+  .key{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:6px;
+    background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.28);font-size:11px;font-weight:700}
+  button.next{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
+    background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.28);font-size:12px;font-weight:600}
+  button.next:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+  /* ---------- "+ Add" tile in the dock ---------- */
+  .addtile .ico{background:rgba(255,255,255,.14);box-shadow:none;border:1.5px dashed rgba(255,255,255,.55)}
+  .addtile .ico::after{display:none}
+
+  /* ---------- edit popover ---------- */
+  .pop{position:fixed;z-index:15;display:flex;flex-direction:column;gap:4px;padding:8px;min-width:220px;
+    border-radius:18px;background:rgba(16,16,24,.86);border:1px solid var(--hair);
+    backdrop-filter:blur(30px) saturate(1.5);-webkit-backdrop-filter:blur(30px) saturate(1.5);
+    box-shadow:0 24px 60px rgba(0,0,0,.5);transform:translate(-50%,-100%)}
+  .pop[hidden]{display:none}
+  .pop.tall{max-height:78vh;overflow-y:auto;top:50%!important;left:50%!important;transform:translate(-50%,-50%);min-width:420px;max-width:86vw}
+  .mi small{display:block;font-size:11px;font-weight:500;color:rgba(255,255,255,.55);margin-top:2px;word-break:break-all}
+  .pop .ttl{font-size:12px;color:var(--muted);padding:6px 10px 4px;font-weight:600}
+  .mi{all:unset;cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;
+    font-size:15px;font-weight:600;color:#fff}
+  .mi svg{width:18px;height:18px;flex:none}
+  .mi.danger{color:#ff7a70}
+  .mi[data-focused]{background:rgba(255,255,255,.2)}
+  .mi[aria-disabled="true"]{opacity:.35}
+
+  /* ---------- library sheet ---------- */
+  .lib{position:fixed;inset:0;z-index:12;display:flex;flex-direction:column;gap:clamp(12px,2.4vh,22px);
+    padding-block:clamp(20px,5vh,48px);
+    padding-left:max(clamp(20px,5vw,72px),env(safe-area-inset-left,0px));
+    padding-right:max(clamp(20px,5vw,72px),env(safe-area-inset-right,0px));
+    background:rgba(8,8,14,.8);backdrop-filter:blur(40px) saturate(1.4);-webkit-backdrop-filter:blur(40px) saturate(1.4);
+    opacity:0;pointer-events:none;transition:opacity .35s;overflow-y:auto}
+  .lib[data-on]{opacity:1;pointer-events:auto}
+  .libhead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+  .libhead h2{margin:0;font-size:clamp(22px,4.4vh,38px);font-weight:800;letter-spacing:-.02em}
+  .libhead p{margin:4px 0 0;color:var(--muted);font-size:clamp(12px,2vh,15px)}
+  .sect{margin:0;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .lgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(96px,13vh,132px),1fr));gap:clamp(12px,2.4vh,22px) clamp(10px,1.6vw,18px);
+    padding:10px 4px}
+  .lgrid .app{position:relative}
+  .lgrid .app[data-focused]{transform:scale(1.1)}
+  .star{position:absolute;top:-6px;right:calc(50% - clamp(54px,9.5vh,86px)/2 - 8px);z-index:2;width:26px;height:26px;border-radius:50%;
+    display:grid;place-items:center;background:rgba(40,40,52,.9);border:1px solid rgba(255,255,255,.3)}
+  .star svg{width:14px;height:14px}
+  .app[data-fav] .star{background:#ffd34d;border-color:#ffd34d}
+  .closebtn{all:unset;cursor:pointer;padding:9px 16px;border-radius:999px;font-weight:700;font-size:14px;
+    background:rgba(255,255,255,.18);border:1px solid var(--hair)}
+  .closebtn[data-focused]{background:#fff;color:#111}
+  .toast{position:fixed;left:50%;top:max(18px,env(safe-area-inset-top,0px));transform:translate(-50%,-20px);z-index:30;
+    padding:10px 18px;border-radius:999px;background:rgba(28,28,38,.8);border:1px solid var(--hair);
+    backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);font-weight:600;font-size:14px;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none}
+  .toast[data-on]{opacity:1;transform:translate(-50%,0)}
+
+  /* calm screen */
+  .dockwrap,.hint,.credit,.status{transition:opacity .8s ease}
+  :root.idle .dockwrap,:root.idle .hint,:root.idle .credit{opacity:0}
+  /* launch veil */
+  .veil{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:rgba(5,6,10,.45);
+    backdrop-filter:blur(30px) saturate(1.3);-webkit-backdrop-filter:blur(30px) saturate(1.3);
+    opacity:0;pointer-events:none;transition:opacity .4s}
+  .veil[data-on]{opacity:1}
+  .veil .card{display:flex;flex-direction:column;align-items:center;gap:16px;transform:scale(.9);transition:transform .4s}
+  .veil[data-on] .card{transform:scale(1)}
+  .veil .ico{width:clamp(80px,14vh,120px)}
+  .veil .t{font-weight:700;font-size:clamp(16px,2.8vh,24px)}
+
+  @media (max-width:560px){
+    .hint{display:none}
+    .credit{max-width:60vw}
+    .dock{justify-content:flex-start}
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500&family=Manrope:wght@500;600;700;800&display=swap">
+
+<div class="scene" id="scene">
+  <div class="layer bgl" id="bgA"></div>
+  <div class="layer bgl" id="bgB"></div>
+  <div class="shade"></div>
+  <div class="clock" id="clock">
+    <div class="date" id="date">&nbsp;</div>
+    <div class="time" id="time">--:--</div>
+  </div>
+  <div class="layer fgl" id="fgA"></div>
+  <div class="layer fgl" id="fgB"></div>
+
+  <div class="hint">
+    <span class="key">←</span><span class="key">→</span><span class="key">↑</span><span class="key">↓</span> move
+    <span class="key">⏎</span> open
+    · hold <span class="key">⏎</span> or <span class="key">☰</span> edit
+    <button class="next" id="next" type="button">Next photo <span class="key">N</span></button>
+  </div>
+  <div class="status" aria-hidden="true">
+    <svg width="18" height="14" viewBox="0 0 24 18" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M2 6a15 15 0 0 1 20 0M5.5 9.5a10 10 0 0 1 13 0M9 13a5 5 0 0 1 6 0"/><circle cx="12" cy="16" r="1.2" fill="#fff" stroke="none"/></svg>
+  </div>
+
+  <div class="dockwrap" id="dockwrap">
+    <div class="dock" id="dock"></div>
+    <div class="sysrow" id="sys"></div>
+  </div>
+  <div class="credit" id="credit"></div>
+</div>
+
+<div class="pop" id="pop" hidden></div>
+
+<div class="lib" id="lib" aria-label="All apps and inputs">
+  <div class="libhead">
+    <div>
+      <h2>All apps &amp; inputs</h2>
+      <p>OK adds or removes a favourite. Hold OK (or press Menu) to uninstall an app. Back to close.</p>
+    </div>
+    <button class="closebtn" id="libClose" type="button">Done</button>
+  </div>
+  <p class="sect">Apps</p>
+  <div class="lgrid" id="libApps"></div>
+  <p class="sect">Video sources</p>
+  <div class="lgrid" id="libSrc"></div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<div class="veil" id="veil"><div class="card"><div class="ico" id="vico"></div><div class="t" id="vt"></div></div></div>
+
+<script>
+var PHOTOS = __PHOTOS__;
+(function(){
+  "use strict";
+  var ROTATE_MS = 5*60*1000, STORE='aurora.favs.v1';
+  var NATIVE=!!(window.Aurora&&window.Aurora.isNative);
+
+  /* ---------- icons (simple marks — not the brands' real logos) ---------- */
+  function txt(s,size,fill){return '<svg viewBox="0 0 48 48"><text x="24" y="25" text-anchor="middle" dominant-baseline="central" font-family="Manrope,system-ui,sans-serif" font-weight="800" font-size="'+(size||30)+'" fill="'+(fill||'#fff')+'">'+s+'</text></svg>';}
+  var S='fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+  var I={
+    netflix:txt('N',34,'#e50914'),
+    youtube:'<svg viewBox="0 0 48 48"><rect x="7" y="13" width="34" height="22" rx="7" fill="#fff"/><path d="M21 19v10l9-5z" fill="#ff0033"/></svg>',
+    play:'<svg viewBox="0 0 48 48"><path d="M18 15v18l15-9z" fill="#fff"/></svg>',
+    spotify:'<svg viewBox="0 0 48 48" fill="none" stroke="#000" stroke-width="3.6" stroke-linecap="round"><path d="M12 19c8-3 17-2 24 2M14 25.5c7-2 13-1.5 19 1.5M16 31.5c5-1.3 10-1 14 1"/></svg>',
+    cone:'<svg viewBox="0 0 48 48"><path d="M24 9l11 30H13z" fill="#fff"/><path d="M17 27h14M15 33h18" stroke="#ff8800" stroke-width="3"/></svg>',
+    chev:'<svg viewBox="0 0 48 48"><path d="M17 12l16 12-16 12z" fill="#000"/></svg>',
+    bag:'<svg viewBox="0 0 48 48"><path d="M14 18h20l-2 20H16z" fill="#fff"/><path d="M19 18v-3a5 5 0 0 1 10 0v3" stroke="#fff" stroke-width="2.6" fill="none"/></svg>',
+    chat:'<svg viewBox="0 0 48 48"><path d="M12 11h24v18H26l-8 7v-7h-6z" fill="#fff"/><path d="M21 17v6M28 17v6" stroke="#9146ff" stroke-width="3"/></svg>',
+    hdmi:'<svg viewBox="0 0 24 24" '+S+'><path d="M3 9h14l4 3-4 3H3z"/><path d="M7 9v6M11 9v6"/></svg>',
+    av:'<svg viewBox="0 0 24 24" '+S+'><circle cx="6" cy="12" r="3"/><circle cx="12" cy="12" r="3"/><circle cx="18" cy="12" r="3"/></svg>',
+    antenna:'<svg viewBox="0 0 24 24" '+S+'><path d="M12 12l-6-8M12 12l6-8M12 12v9M8 21h8"/></svg>',
+    usb:'<svg viewBox="0 0 24 24" '+S+'><path d="M12 3v15M9 6l3-3 3 3M7 11v3l5 3M17 9v4l-5 3"/><circle cx="12" cy="19.5" r="1.5"/></svg>',
+    grid:'<svg viewBox="0 0 24 24" '+S+'><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>',
+    gear:'<svg viewBox="0 0 24 24" '+S+'><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M18.5 5.5l-1.8 1.8M7.3 16.7l-1.8 1.8"/></svg>',
+    plus:'<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>',
+    star:'<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.8z" fill="#fff"/></svg>',
+    starOn:'<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.8z" fill="#3a2a00"/></svg>',
+    trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+    left:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+    right:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+    x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+  };
+  function g(a,b){return 'linear-gradient(160deg,'+a+','+b+')';}
+
+  /* Example of what's installed. On the TV, the Android side fills this list
+     from the real installed apps and inputs. */
+  var APPS=[
+    {id:'netflix', name:'Netflix',      tint:g('#2a0b0d','#000'),   icon:I.netflix},
+    {id:'youtube', name:'YouTube',      tint:g('#ff4a5c','#e0001f'),icon:I.youtube},
+    {id:'dstv',    name:'DStv',         tint:g('#2aa3ff','#0060c0'),icon:txt('D',32)},
+    {id:'prime',   name:'Prime Video',  tint:g('#36c3ff','#0a7fc4'),icon:I.play},
+    {id:'disney',  name:'Disney+',      tint:g('#1f3bb3','#0a1650'),icon:txt('D+',22)},
+    {id:'spotify', name:'Spotify',      tint:g('#2ee070','#16a84b'),icon:I.spotify},
+    {id:'appletv', name:'Apple TV',     tint:g('#3a3a3c','#0b0b0c'),icon:txt('tv',26)},
+    {id:'sabc',    name:'SABC+',        tint:g('#2ec4b6','#127a72'),icon:txt('S+',22)},
+    {id:'plex',    name:'Plex',         tint:g('#2b2b2b','#111'),   icon:'<svg viewBox="0 0 48 48"><path d="M17 12h8l9 12-9 12h-8l9-12z" fill="#e5a00d"/></svg>'},
+    {id:'vlc',     name:'VLC',          tint:g('#ffb347','#f07800'),icon:I.cone},
+    {id:'twitch',  name:'Twitch',       tint:g('#a970ff','#6a2bd9'),icon:I.chat},
+    {id:'kodi',    name:'Kodi',         tint:g('#3ab3e6','#14638a'),icon:txt('K',30)},
+    {id:'play',    name:'Play Store',   tint:g('#ffffff','#e6e9ef'),icon:'<svg viewBox="0 0 48 48"><path d="M14 10l22 14-22 14z" fill="#34a853"/><path d="M14 10l14 14-14 14z" fill="#4285f4"/></svg>'},
+    {id:'files',   name:'Media Player', tint:g('#7b8cff','#4652c8'),icon:I.bag}
+  ];
+  var SOURCES=[
+    {id:'hdmi1', name:'HDMI 1',      icon:I.hdmi, kind:'source'},
+    {id:'hdmi2', name:'HDMI 2',      icon:I.hdmi, kind:'source'},
+    {id:'tv',    name:'Antenna TV',  icon:I.antenna, kind:'source'},
+    {id:'av',    name:'AV',          icon:I.av, kind:'source'},
+    {id:'usb',   name:'USB',         icon:I.usb, kind:'source'}
+  ];
+  APPS.forEach(function(a){a.kind='app';});
+  var BYID={}; APPS.concat(SOURCES).forEach(function(x){BYID[x.id]=x;});
+  var DEFAULT={apps:['netflix','youtube','dstv','prime','disney','spotify'],sources:['hdmi1','hdmi2']};
+
+  var favs=load();
+  function load(){
+    try{ var v=JSON.parse(localStorage.getItem(STORE)); if(v&&v.apps&&v.sources) return clean(v); }catch(e){}
+    return JSON.parse(JSON.stringify(DEFAULT));
+  }
+  function clean(v){ return {apps:v.apps.filter(function(i){return BYID[i];}),sources:v.sources.filter(function(i){return BYID[i];})}; }
+  function save(){ try{ localStorage.setItem(STORE,JSON.stringify(favs)); }catch(e){} }
+  function listFor(item){ return item.kind==='app'?favs.apps:favs.sources; }
+  function isFav(item){ return listFor(item).indexOf(item.id)>=0; }
+  function toggleFav(item){
+    var l=listFor(item), i=l.indexOf(item.id);
+    if(i>=0){ l.splice(i,1); toast('Removed '+item.name+' from favourites'); }
+    else { l.push(item.id); toast('Added '+item.name+' to favourites'); }
+    save();
+  }
+
+  /* ---------- building tiles ---------- */
+  function tile(item,opts){
+    opts=opts||{};
+    var b=document.createElement('button'); b.type='button';
+    b.className='app'+(opts.pill?' pill':'')+(opts.cls?' '+opts.cls:'');
+    b.dataset.key=(opts.key||item.id);
+    b.innerHTML=(opts.star?'<span class="star">'+(isFav(item)?I.starOn:I.star)+'</span>':'')+
+      '<span class="ico" style="--tint:'+(item.tint||'rgba(255,255,255,.16)')+'">'+item.icon+'</span><span class="lbl">'+item.name+'</span>';
+    if(opts.star && isFav(item)) b.setAttribute('data-fav','');
+    b._item=item; b._act=opts.act;
+    b.addEventListener('mouseenter',function(){ setFocus(b); });
+    b.addEventListener('click',function(){ setFocus(b); activate(b); });
+    b.addEventListener('contextmenu',function(e){ e.preventDefault(); setFocus(b); openEdit(b); });
+    return b;
+  }
+
+  var dockEl=document.getElementById('dock'), sysEl=document.getElementById('sys');
+  function renderMain(){
+    var keep=focused&&focused.dataset.key;
+    dockEl.innerHTML=''; sysEl.innerHTML='';
+    favs.apps.forEach(function(id){ dockEl.appendChild(tile(BYID[id],{editable:true})); });
+    dockEl.appendChild(tile({id:'_add',name:'Add',icon:I.plus},{cls:'addtile',act:function(){openLib('apps');}}));
+    favs.sources.forEach(function(id){ sysEl.appendChild(tile(BYID[id],{pill:true})); });
+    sysEl.appendChild(tile({id:'_lib',name:'All apps & inputs',icon:I.grid},{pill:true,act:function(){openLib('apps');}}));
+    sysEl.appendChild(tile({id:'_set',name:'Settings',icon:I.gear},{pill:true,act:function(el){openSetup(el);}}));
+    var el=keep&&document.querySelector('#dockwrap [data-key="'+keep+'"]');
+    setFocus(el||dockEl.firstChild);
+  }
+
+  /* ---------- focus + spatial navigation (TV D-pad) ---------- */
+  var focused=null, mode='main';
+  function setFocus(el){
+    if(!el) return;
+    if(focused) focused.removeAttribute('data-focused');
+    focused=el; el.setAttribute('data-focused','');
+    if(el.scrollIntoView) el.scrollIntoView({block:'nearest',inline:'nearest'});
+  }
+  function scopeEls(){
+    if(mode==='pop') return [].slice.call(document.querySelectorAll('#pop .mi:not([aria-disabled="true"])'));
+    if(mode==='lib') return [].slice.call(document.querySelectorAll('#lib .app, #lib .closebtn'));
+    return [].slice.call(document.querySelectorAll('#dockwrap .app'));
+  }
+  function c(el){var r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,h:r.height};}
+  function move(dir){
+    if(!focused) return;
+    var a=c(focused), best=null, bs=Infinity, els=scopeEls();
+    var horiz=(dir==='left'||dir==='right');
+    var cand=els.filter(function(el){
+      if(el===focused) return false; var b=c(el);
+      if(dir==='right') return b.x>a.x+4 && Math.abs(b.y-a.y)<a.h*0.6;
+      if(dir==='left')  return b.x<a.x-4 && Math.abs(b.y-a.y)<a.h*0.6;
+      if(dir==='down')  return b.y>a.y+8;
+      return b.y<a.y-8;
+    });
+    if(!horiz && cand.length){ // nearest row first, then nearest column
+      var dmin=Math.min.apply(null,cand.map(function(el){return Math.abs(c(el).y-a.y);}));
+      cand=cand.filter(function(el){return Math.abs(c(el).y-a.y)<dmin+24;});
+    }
+    cand.forEach(function(el){ var b=c(el); var s=horiz?Math.abs(b.x-a.x):Math.abs(b.x-a.x);
+      if(s<bs){bs=s;best=el;} });
+    if(best) setFocus(best);
+  }
+
+  /* ---------- actions ---------- */
+  function activate(el){
+    if(el._menu){ el._menu(); return; }
+    if(el.classList.contains('closebtn')){ closeLib(); return; }
+    if(mode==='lib'){ toggleFav(el._item); refreshLibTile(el); return; }
+    if(el._act){ el._act(el); return; }
+    launch(el._item);
+  }
+  var veil=document.getElementById('veil'),vt;
+  function launch(d){
+    var v=document.getElementById('vico'); v.style.setProperty('--tint',d.tint||'rgba(255,255,255,.16)'); v.innerHTML=d.icon;
+    document.getElementById('vt').textContent=(d.kind==='source'?'Switching to ':'Opening ')+d.name+'…';
+    veil.setAttribute('data-on',''); clearTimeout(vt); vt=setTimeout(function(){veil.removeAttribute('data-on');},1500);
+  }
+  var toastEl=document.getElementById('toast'),tt;
+  function toast(s){ toastEl.textContent=s; toastEl.setAttribute('data-on',''); clearTimeout(tt); tt=setTimeout(function(){toastEl.removeAttribute('data-on');},1800); }
+
+  /* ---------- edit popover (hold OK, Menu key, or right-click) ---------- */
+  var pop=document.getElementById('pop'), editing=null;
+  var backTo='main';
+  function menu(el,title,opts,tall){
+    editing=el; backTo=mode; pop.className='pop'+(tall?' tall':'');
+    pop.innerHTML='<div class="ttl">'+title+'</div>';
+    opts.forEach(function(o){
+      var b=document.createElement('button'); b.type='button'; b.className='mi'+(o.cls?' '+o.cls:'');
+      b.innerHTML=o.i+'<span>'+o.t+'</span>'; if(o.off) b.setAttribute('aria-disabled','true');
+      b._menu=function(){ if(o.off) return; var changed=o.f(); save(); closeEdit(changed!==false); };
+      b.addEventListener('mouseenter',function(){ if(!o.off) setFocus(b); });
+      b.addEventListener('click',function(){ b._menu(); });
+      pop.appendChild(b);
+    });
+    var r=el.getBoundingClientRect();
+    pop.style.left=Math.min(window.innerWidth-150,Math.max(150,r.left+r.width/2))+'px';
+    pop.hidden=false;
+    pop.style.top=Math.max(pop.offsetHeight+16,r.top-14)+'px';
+    mode='pop';
+    setFocus(pop.querySelector('.mi:not([aria-disabled="true"])'));
+  }
+  function openEdit(el){
+    var item=el._item; if(item&&item.id==='_set'){ openHidden(el); return; }
+    if(!item||item.id.charAt(0)==='_') return;
+    var inLib=(mode==='lib'), l=listFor(item), idx=l.indexOf(item.id), fav=idx>=0, opts=[];
+    if(!inLib&&fav){
+      opts.push({t:'Move left', i:I.left, off:idx<=0, f:function(){ l.splice(idx,1); l.splice(idx-1,0,item.id); }});
+      opts.push({t:'Move right',i:I.right,off:idx>=l.length-1, f:function(){ l.splice(idx,1); l.splice(idx+1,0,item.id); }});
+    }
+    if(fav) opts.push({t:'Remove from favourites', i:I.x, f:function(){ l.splice(idx,1); toast('Removed '+item.name+' from favourites'); }});
+    else opts.push({t:'Add to favourites', i:I.star, f:function(){ l.push(item.id); toast('Added '+item.name+' to favourites'); }});
+    if(item.kind==='app'){
+      opts.push(item.system
+        ? {t:'Built into the TV, can’t uninstall', i:I.trash, cls:'danger', off:true, f:function(){}}
+        : {t:'Uninstall '+item.name, i:I.trash, cls:'danger', f:function(){ return uninstall(item); }});
+    }
+    opts.push({t:'Cancel', i:I.left, f:function(){ return false; }});
+    menu(el,item.name,opts);
+  }
+  function uninstall(item){
+    if(NATIVE){ try{ window.Aurora.uninstall(item.id); }catch(e){} return false; }
+    APPS=APPS.filter(function(a){return a.id!==item.id;}); delete BYID[item.id];
+    favs.apps=favs.apps.filter(function(i){return i!==item.id;});
+    toast('Uninstalled '+item.name+' (preview only)');
+  }
+  function openSetup(el){
+    var on=false; try{ on=NATIVE&&window.Aurora.homeKeyOn(); }catch(e){}
+    function sys(w){ return function(){ if(NATIVE){ try{ window.Aurora.openSystem(w); }catch(e){} } else toast('This opens on the TV'); return false; }; }
+    var block=true, ver='preview'; try{ if(NATIVE){ block=window.Aurora.getBool('blockAds',true); ver=window.Aurora.version(); } }catch(e){}
+    menu(el,'Settings',[
+      {t:'Android settings', i:I.gear, f:sys('android')},
+      {t:'TV settings', i:I.gear, f:sys('tv')},
+      {t:on?'Home button helper: On':'Home button helper: Off (turn on)', i:I.grid, f:sys('accessibility')},
+      {t:'Block the TV\u2019s ad screensaver: '+(block?'On':'Off'), i:I.x, f:function(){
+        if(NATIVE){ try{ window.Aurora.setBool('blockAds',!block); }catch(e){} }
+        toast('Ad screensaver blocking '+(block?'off':'on')); return false; }},
+      {t:'Check for updates (v'+ver+')', i:I.star, f:function(){ checkUpdate(); return false; }},
+      {t:'Cancel', i:I.left, f:function(){ return false; }}
+    ]);
+  }
+  function openHidden(el){
+    var list=[];
+    if(NATIVE){ try{ list=JSON.parse(window.Aurora.hiddenScreens()); }catch(e){} }
+    else list=[{pkg:'com.android.tv.settings',cls:'com.android.tv.settings.system.development.DevelopmentActivity',label:'Developer options (example)'},
+               {pkg:'com.android.tv.settings',cls:'com.android.tv.settings.about.AboutActivity',label:'About (example)'}];
+    var opts=diagRows().concat(list.map(function(s){
+      var short=s.cls.split('.').pop();
+      return {t:(s.label||short)+'<small>'+s.pkg+' / '+short+'</small>', i:I.gear,
+        f:function(){ if(NATIVE){ try{ window.Aurora.openActivity(s.pkg,s.cls); }catch(e){} } else toast('Opens on the TV'); return false; }};
+    }));
+    if(!list.length) opts.push({t:'No hidden settings screens found on this TV', i:I.x, off:true, f:function(){}});
+    opts.push({t:'Close', i:I.left, f:function(){ return false; }});
+    menu(el,'Hidden settings screens ('+list.length+')',opts,true);
+  }
+  /* ---------- self-update ---------- */
+  var pendingUpdate=null;
+  function checkUpdate(){
+    if(!NATIVE){ toast('Updates are checked on the TV'); return; }
+    toast('Checking for updates…'); try{ window.Aurora.checkUpdate(); }catch(e){}
+  }
+  window.auroraUpdateStatus=function(s){
+    var r={}; try{ r=JSON.parse(s); }catch(e){}
+    if(r.error){ toast(r.error); return; }
+    if(r.needsPermission){ toast('Allow Aurora Home to install updates, then try again'); return; }
+    if(r.downloaded){ toast('Downloaded — press Install on the next screen'); return; }
+    if(!r.newer){ toast('You’re on the latest version (v'+(r.current||'?')+')'); return; }
+    pendingUpdate=r;
+    var host=document.querySelector('#dockwrap [data-key="_set"]')||dockEl.firstChild;
+    if(mode!=='main'){ if(mode==='pop') closeEdit(false); else if(mode==='lib') closeLib(); }
+    menu(host,'Update to v'+r.latest+' available (you have v'+r.current+')',[
+      {t:'Download and install', i:I.star, f:function(){ toast('Downloading v'+r.latest+'…'); try{ window.Aurora.installUpdate(r.url); }catch(e){} return false; }},
+      {t:'Not now', i:I.left, f:function(){ return false; }}
+    ]);
+  };
+
+  /* ---------- diagnostics (hold OK on Settings) ---------- */
+  function diagRows(){
+    var rows=[];
+    if(!NATIVE){ rows.push({t:'Network and debug info shows on the TV', i:I.grid, off:true, f:function(){}}); return rows; }
+    var n={}; try{ n=JSON.parse(window.Aurora.netInfo()); }catch(e){}
+    var ads=0; try{ ads=window.Aurora.adsBlocked(); }catch(e){}
+    rows.push({t:'Aurora v'+window.Aurora.version()+' · IP '+(n.ip||'unknown')+'<small>Developer mode '+(n.devMode?'on':'off')+' · USB debugging '+(n.adb?'on':'off')+' · network debugging port '+(n.tcpPort||'none')+'</small>', i:I.grid, off:true, f:function(){}});
+    rows.push({t:'Ad screens closed so far: '+ads, i:I.x, off:true, f:function(){}});
+    rows.push({t:'Recently seen screens', i:I.grid, f:function(){ setTimeout(openSeen,30); return false; }});
+    return rows;
+  }
+  function openSeen(){
+    var host=document.querySelector('#dockwrap [data-key="_set"]')||dockEl.firstChild, list=[];
+    try{ list=JSON.parse(window.Aurora.seenScreens()); }catch(e){}
+    var opts=list.slice().reverse().map(function(s){
+      var d=new Date(s.t), hm=(d.getHours()<10?'0':'')+d.getHours()+':'+(d.getMinutes()<10?'0':'')+d.getMinutes();
+      return {t:hm+'  '+(s.ad?'[ad, closed] ':'')+s.pkg+'<small>'+s.cls+'</small>', i:s.ad?I.x:I.grid, off:true, f:function(){}};
+    });
+    opts.push({t:'Close', i:I.left, f:function(){ return false; }});
+    menu(host,'Recently seen screens (newest first)',opts,true);
+  }
+
+  /* ---------- calm screen: dock fades after 3 minutes of no buttons ---------- */
+  var IDLE_MS=3*60*1000, idleT=null, root2=document.documentElement;
+  function setIdle(on){ if(on){ if(mode==='main') root2.className+=' idle'; } else root2.className=root2.className.replace(/\s*idle/g,''); }
+  function bump(){ setIdle(false); clearTimeout(idleT); idleT=setTimeout(function(){ setIdle(true); },IDLE_MS); }
+  window.auroraWake=bump;
+  window.auroraIdle=function(){ if(mode==='pop') closeEdit(false); if(mode==='lib') closeLib(); clearTimeout(idleT); setIdle(true); };
+  document.addEventListener('keydown',function(e){
+    if(/\bidle\b/.test(root2.className)){ e.preventDefault(); e.stopImmediatePropagation(); bump(); swallowUp=true; return; }
+    bump();
+  },true);
+  var swallowUp=false;
+  document.addEventListener('keyup',function(e){ if(swallowUp){ swallowUp=false; e.stopImmediatePropagation(); } },true);
+  document.addEventListener('mousemove',bump,true);
+  bump();
+
+  function closeEdit(changed){
+    pop.hidden=true; mode=backTo||'main';
+    var key=editing&&editing.dataset.key;
+    var par=editing&&editing.parentNode, idx=par?[].indexOf.call(par.children,editing):0; editing=null;
+    focused=null;
+    if(mode==='lib'){
+      if(changed) buildLib();
+      var le=key&&lib.querySelector('[data-key="'+key+'"]');
+      if(!le){ var grid=document.getElementById('libApps'); le=grid.children[Math.min(idx,grid.children.length-1)]; }
+      setFocus(le||lib.querySelector('.app')); return;
+    }
+    if(changed) renderMain();
+    var el=key&&document.querySelector('#dockwrap [data-key="'+key+'"]');
+    if(!el&&par){ el=par.children[Math.min(idx,par.children.length-1)]; }
+    setFocus(el||dockEl.firstChild);
+  }
+  document.addEventListener('mousedown',function(e){ if(mode==='pop'&&!pop.contains(e.target)) closeEdit(false); });
+
+  /* ---------- library: every app and input, star to favourite ---------- */
+  var lib=document.getElementById('lib');
+  function buildLib(){
+    var ga=document.getElementById('libApps'), gs=document.getElementById('libSrc');
+    ga.innerHTML=''; gs.innerHTML='';
+    APPS.forEach(function(a){ ga.appendChild(tile(a,{star:true})); });
+    SOURCES.forEach(function(s){ gs.appendChild(tile(s,{star:true})); });
+  }
+  function refreshLibTile(el){
+    var on=isFav(el._item);
+    if(on) el.setAttribute('data-fav',''); else el.removeAttribute('data-fav');
+    el.querySelector('.star').innerHTML=on?I.starOn:I.star;
+  }
+  function openLib(){
+    buildLib(); lib.setAttribute('data-on',''); mode='lib'; focused=null;
+    setFocus(lib.querySelector('.app'));
+  }
+  function closeLib(){
+    lib.removeAttribute('data-on'); mode='main'; focused=null; renderMain();
+  }
+  document.getElementById('libClose').addEventListener('click',closeLib);
+  document.getElementById('libClose').addEventListener('mouseenter',function(e){ setFocus(e.currentTarget); });
+
+  /* ---------- photo rotation ---------- */
+  var slots=[{bg:document.getElementById('bgA'),fg:document.getElementById('fgA')},
+             {bg:document.getElementById('bgB'),fg:document.getElementById('fgB')}];
+  var active=0, shown=-1, timer=null, root=document.documentElement;
+  function pickRandom(){ if(PHOTOS.length<2) return 0; var n; do{ n=Math.floor(Math.random()*PHOTOS.length); }while(n===shown); return n; }
+  function restart(el){ el.classList.remove('drift'); void el.offsetWidth; el.classList.add('drift'); }
+  function show(n){
+    var p=PHOTOS[n], next=slots[1-active], prev=slots[active], img=new Image();
+    img.onload=function(){
+      next.bg.style.backgroundImage='url('+p.bg+')';
+      next.fg.style.backgroundImage=p.fg?'url('+p.fg+')':'none';
+      restart(next.bg); restart(next.fg);
+      next.bg.classList.add('on'); if(p.fg) next.fg.classList.add('on'); else next.fg.classList.remove('on');
+      prev.bg.classList.remove('on'); prev.fg.classList.remove('on');
+      root.style.setProperty('--clock',p.clock); root.style.setProperty('--clock-top',(p.top*100)+'%');
+      document.getElementById('credit').textContent='Photo: '+p.name+' · '+p.credit;
+      active=1-active; shown=n;
+    };
+    img.src=p.bg;
+  }
+  function schedule(){ clearInterval(timer); timer=setInterval(function(){ show(pickRandom()); },ROTATE_MS); }
+  document.getElementById('next').addEventListener('click',function(){ show(pickRandom()); schedule(); });
+
+  /* ---------- keys: D-pad = arrows, OK = Enter, hold OK / Menu = edit ---------- */
+  var holdT=null, held=false;
+  document.addEventListener('keydown',function(e){
+    var k=e.key;
+    if(k==='n'||k==='N'||k==='ChannelUp'||k==='MediaTrackNext'){ show(pickRandom()); schedule(); return; }
+    if(k==='Escape'||k==='GoBack'||k==='Backspace'){
+      e.preventDefault();
+      if(veil.hasAttribute('data-on')) veil.removeAttribute('data-on');
+      else if(mode==='pop') closeEdit(false);
+      else if(mode==='lib') closeLib();
+      return;
+    }
+    if((k==='ContextMenu'||k==='m'||k==='M') && (mode==='main'||mode==='lib')){ e.preventDefault(); if(focused) openEdit(focused); return; }
+    var dirs={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'};
+    if(dirs[k]){ e.preventDefault(); if(!veil.hasAttribute('data-on')) move(dirs[k]); return; }
+    if(k==='Enter'){
+      e.preventDefault(); if(e.repeat||veil.hasAttribute('data-on')) return;
+      held=false;
+      if(mode==='main'||mode==='lib'){ holdT=setTimeout(function(){ held=true; if(focused) openEdit(focused); },650); }
+    }
+  });
+  document.addEventListener('keyup',function(e){
+    if(e.key!=='Enter') return;
+    clearTimeout(holdT);
+    if(held){ held=false; return; }
+    if(focused && !veil.hasAttribute('data-on')) activate(focused);
+  });
+
+  /* ---------- clock ---------- */
+  function tick(){
+    var d=new Date(),h=d.getHours(),m=d.getMinutes();
+    document.getElementById('time').textContent=(h<10?'0':'')+h+':'+(m<10?'0':'')+m;
+    document.getElementById('date').textContent=d.toLocaleDateString('en-ZA',{weekday:'short',day:'numeric',month:'short'});
+  }
+  tick(); setInterval(tick,5000);
+
+  window.aurora={show:show,count:PHOTOS.length,openLib:openLib,openEdit:function(){openEdit(focused);}};
+  /* power-on: random photo, then a new random one every 5 minutes */
+  renderMain(); show(pickRandom()); schedule();
+})();
+</script>

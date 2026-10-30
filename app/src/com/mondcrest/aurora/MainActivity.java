@@ -1,0 +1,635 @@
+package com.mondcrest.aurora;
+
+import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
+import android.media.tv.TvContract;
+import android.media.tv.TvInputInfo;
+import android.media.tv.TvInputManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.provider.Settings;
+import android.util.Base64;
+import android.view.KeyEvent;
+import android.view.View;
+import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.Toast;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Aurora home screen: a full-screen WebView running the launcher UI from assets,
+ * with a small bridge ("Aurora") that lists and opens installed apps and TV inputs.
+ */
+public class MainActivity extends Activity {
+
+    private WebView web;
+    private boolean pageReady = false;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.BLACK));
+
+        web = new WebView(this);
+        web.setBackgroundColor(Color.BLACK);
+        web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        web.setFocusable(true);
+        web.setFocusableInTouchMode(true);
+
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setDatabaseEnabled(true);
+        s.setAllowFileAccess(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setLoadWithOverviewMode(true);
+        s.setUseWideViewPort(true);
+        s.setTextZoom(100);
+
+        web.setWebChromeClient(new WebChromeClient());
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                pageReady = true;
+            }
+        });
+        web.addJavascriptInterface(new Bridge(this), "Aurora");
+        setContentView(web);
+        web.loadUrl("file:///android_asset/index.html");
+        web.requestFocus();
+        hideSystemUi();
+    }
+
+    private void hideSystemUi() {
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+    }
+
+    private void js(String code) {
+        if (web != null && pageReady) web.evaluateJavascript(code, null);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        hideSystemUi();
+        if (web != null) {
+            web.onResume();
+            web.requestFocus();
+        }
+        js("window.auroraResume && window.auroraResume()");
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (web != null) web.onPause();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // Home pressed while already home: close any open panel.
+        js("window.auroraHome && window.auroraHome()");
+        // Came back because the TV's ad screensaver tried to start: show Aurora's calm screen.
+        if (intent != null && intent.getBooleanExtra("fromAd", false)) js("window.auroraIdle && window.auroraIdle()");
+    }
+
+    @Override
+    public void onBackPressed() {
+        // A home screen never exits; Back closes panels inside the page.
+        js("window.auroraBack && window.auroraBack()");
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent e) {
+        int k = e.getKeyCode();
+        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+            if (k == KeyEvent.KEYCODE_MENU || k == KeyEvent.KEYCODE_INFO) {
+                js("window.auroraMenu && window.auroraMenu()");
+                return true;
+            }
+            if (k == KeyEvent.KEYCODE_CHANNEL_UP || k == KeyEvent.KEYCODE_MEDIA_NEXT) {
+                js("window.auroraNext && window.auroraNext()");
+                return true;
+            }
+        }
+        if (k == KeyEvent.KEYCODE_BACK && e.getAction() == KeyEvent.ACTION_UP) {
+            onBackPressed();
+            return true;
+        }
+        if (k == KeyEvent.KEYCODE_BACK) return true;
+        return super.dispatchKeyEvent(e);
+    }
+
+    /* ------------------------------------------------------------------ */
+
+    public static class Bridge {
+        private final MainActivity act;
+
+        Bridge(MainActivity a) { act = a; }
+
+        @JavascriptInterface
+        public String apps() {
+            JSONArray out = new JSONArray();
+            try {
+                PackageManager pm = act.getPackageManager();
+                Set<String> seen = new HashSet<String>();
+                String self = act.getPackageName();
+                String[] cats = {"android.intent.category.LEANBACK_LAUNCHER", Intent.CATEGORY_LAUNCHER};
+                for (String cat : cats) {
+                    Intent i = new Intent(Intent.ACTION_MAIN);
+                    i.addCategory(cat);
+                    List<ResolveInfo> list = pm.queryIntentActivities(i, 0);
+                    for (ResolveInfo ri : list) {
+                        String pkg = ri.activityInfo.packageName;
+                        if (pkg.equals(self) || seen.contains(pkg)) continue;
+                        seen.add(pkg);
+                        JSONObject o = new JSONObject();
+                        o.put("pkg", pkg);
+                        o.put("name", String.valueOf(ri.loadLabel(pm)));
+                        o.put("icon", iconB64(ri.loadIcon(pm)));
+                        ApplicationInfo ai = ri.activityInfo.applicationInfo;
+                        o.put("system", (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0);
+                        out.put(o);
+                    }
+                }
+            } catch (Exception ignored) { }
+            return out.toString();
+        }
+
+        @JavascriptInterface
+        public String inputs() {
+            JSONArray out = new JSONArray();
+            try {
+                TvInputManager tim = (TvInputManager) act.getSystemService(Context.TV_INPUT_SERVICE);
+                if (tim != null) {
+                    for (TvInputInfo info : tim.getTvInputList()) {
+                        if (Boolean.TRUE.equals(call(info, "isHidden"))) continue;
+                        JSONObject o = new JSONObject();
+                        o.put("id", info.getId());
+                        o.put("type", info.getType());
+                        Object customObj = call(info, "loadCustomLabel");
+                        CharSequence custom = customObj instanceof CharSequence ? (CharSequence) customObj : null;
+                        CharSequence label = (custom != null && custom.length() > 0) ? custom : info.loadLabel(act);
+                        o.put("label", String.valueOf(label));
+                        o.put("passthrough", info.isPassthroughInput());
+                        out.put(o);
+                    }
+                }
+            } catch (Exception ignored) { }
+            return out.toString();
+        }
+
+        @JavascriptInterface
+        public boolean launch(final String pkg) {
+            act.runOnUiThread(new Runnable() {
+                public void run() {
+                    PackageManager pm = act.getPackageManager();
+                    Intent i = null;
+                    try { i = pm.getLeanbackLaunchIntentForPackage(pkg); } catch (Throwable ignored) { }
+                    if (i == null) i = pm.getLaunchIntentForPackage(pkg);
+                    if (i == null) { toast("Can't open this app"); return; }
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try { act.startActivity(i); } catch (ActivityNotFoundException e) { toast("Can't open this app"); }
+                }
+            });
+            return true;
+        }
+
+        @JavascriptInterface
+        public boolean openInput(final String id, final boolean passthrough) {
+            act.runOnUiThread(new Runnable() {
+                public void run() {
+                    Uri uri = passthrough
+                            ? TvContract.buildChannelUriForPassthroughInput(id)
+                            : TvContract.buildChannelsUriForInput(id);
+                    Intent i = new Intent(Intent.ACTION_VIEW, uri);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try {
+                        act.startActivity(i);
+                    } catch (ActivityNotFoundException e) {
+                        toast("This TV doesn't allow switching inputs from here — use the Source button on the remote");
+                    }
+                }
+            });
+            return true;
+        }
+
+        @JavascriptInterface
+        public void openSettings() {
+            act.runOnUiThread(new Runnable() {
+                public void run() {
+                    Intent i = new Intent(Settings.ACTION_SETTINGS);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try { act.startActivity(i); } catch (ActivityNotFoundException e) { toast("Settings not available"); }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public boolean isNative() { return true; }
+
+        /**
+         * Lists every openable screen on the TV whose name suggests developer options,
+         * accessibility, device info or home-app settings — including ones JVC left in the
+         * firmware but removed from its menus.
+         */
+        @JavascriptInterface
+        public String hiddenScreens() {
+            JSONArray out = new JSONArray();
+            try {
+                PackageManager pm = act.getPackageManager();
+                java.util.regex.Pattern want = java.util.regex.Pattern.compile(
+                        "(?i)(develop|accessib|deviceinfo|device_info|aboutactivity|about\\b|\\.about|homesettings|home_settings|defaultapp|default_app|homeapp|usbdebug|adb|debug|unknownsource|externalsources|security)");
+                for (ApplicationInfo app : pm.getInstalledApplications(0)) {
+                    android.content.pm.PackageInfo pi;
+                    try {
+                        pi = pm.getPackageInfo(app.packageName, PackageManager.GET_ACTIVITIES);
+                    } catch (Throwable t) { continue; }
+                    if (pi.activities == null) continue;
+                    for (android.content.pm.ActivityInfo ai : pi.activities) {
+                        if (!ai.exported || !ai.enabled) continue;
+                        if (ai.permission != null && ai.permission.length() > 0) continue;
+                        if (!want.matcher(ai.name).find()) continue;
+                        JSONObject o = new JSONObject();
+                        o.put("pkg", ai.packageName);
+                        o.put("cls", ai.name);
+                        CharSequence label = ai.loadLabel(pm);
+                        o.put("label", label == null ? "" : String.valueOf(label));
+                        out.put(o);
+                    }
+                }
+            } catch (Exception ignored) { }
+            return out.toString();
+        }
+
+        @JavascriptInterface
+        public void openActivity(final String pkg, final String cls) {
+            act.runOnUiThread(new Runnable() {
+                public void run() {
+                    Intent i = cmp(pkg, cls);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    try { act.startActivity(i); } catch (Exception e) { toast("That screen won't open: " + e.getClass().getSimpleName()); }
+                }
+            });
+        }
+
+        /* ---------------- preferences, version, diagnostics ---------------- */
+
+        private android.content.SharedPreferences prefs() {
+            return act.getSharedPreferences(HomeKeyService.PREFS, Context.MODE_PRIVATE);
+        }
+
+        @JavascriptInterface
+        public boolean getBool(String key, boolean def) { return prefs().getBoolean(key, def); }
+
+        @JavascriptInterface
+        public void setBool(String key, boolean v) { prefs().edit().putBoolean(key, v).apply(); }
+
+        @JavascriptInterface
+        public int adsBlocked() { return prefs().getInt("adsBlocked", 0); }
+
+        @JavascriptInterface
+        public String seenScreens() { return prefs().getString("seen", "[]"); }
+
+        @JavascriptInterface
+        public String version() {
+            try {
+                return act.getPackageManager().getPackageInfo(act.getPackageName(), 0).versionName;
+            } catch (Exception e) { return "?"; }
+        }
+
+        @JavascriptInterface
+        public String netInfo() {
+            JSONObject o = new JSONObject();
+            try {
+                StringBuilder ips = new StringBuilder();
+                for (java.net.NetworkInterface ni : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                    if (!ni.isUp() || ni.isLoopback()) continue;
+                    for (java.net.InetAddress a : java.util.Collections.list(ni.getInetAddresses())) {
+                        if (a instanceof java.net.Inet4Address) {
+                            if (ips.length() > 0) ips.append(", ");
+                            ips.append(a.getHostAddress());
+                        }
+                    }
+                }
+                o.put("ip", ips.toString());
+                int adb = Settings.Global.getInt(act.getContentResolver(), Settings.Global.ADB_ENABLED, 0);
+                o.put("adb", adb == 1);
+                o.put("tcpPort", sysProp("service.adb.tcp.port") + "/" + sysProp("persist.adb.tcp.port"));
+                o.put("devMode", Settings.Global.getInt(act.getContentResolver(), "development_settings_enabled", 0) == 1);
+            } catch (Exception ignored) { }
+            return o.toString();
+        }
+
+        private static String sysProp(String key) {
+            try {
+                Class<?> c = Class.forName("android.os.SystemProperties");
+                return (String) c.getMethod("get", String.class).invoke(null, key);
+            } catch (Throwable t) { return ""; }
+        }
+
+        /* ---------------- self-update from GitHub releases ---------------- */
+
+        static final String RELEASES = "https://api.github.com/repos/automations-mondcrest/aurora-tv/releases/latest";
+
+        @JavascriptInterface
+        public void checkUpdate() {
+            new Thread(new Runnable() {
+                public void run() {
+                    JSONObject r = new JSONObject();
+                    try {
+                        String body = httpGet(RELEASES);
+                        JSONObject rel = new JSONObject(body);
+                        String tag = rel.optString("tag_name", "").replaceFirst("^[vV]", "");
+                        String url = null;
+                        JSONArray assets = rel.optJSONArray("assets");
+                        if (assets != null) {
+                            for (int k = 0; k < assets.length(); k++) {
+                                JSONObject a = assets.getJSONObject(k);
+                                if (a.optString("name").toLowerCase().endsWith(".apk")) { url = a.optString("browser_download_url"); break; }
+                            }
+                        }
+                        r.put("latest", tag);
+                        r.put("current", version());
+                        r.put("url", url == null ? "" : url);
+                        r.put("newer", url != null && newer(tag, version()));
+                        r.put("notes", rel.optString("body", ""));
+                    } catch (Exception e) {
+                        try { r.put("error", "Couldn't reach GitHub (" + e.getClass().getSimpleName() + ")"); } catch (Exception ignored) { }
+                    }
+                    sendJs("window.auroraUpdateStatus && window.auroraUpdateStatus(" + JSONObject.quote(r.toString()) + ")");
+                }
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void installUpdate(final String url) {
+            if (!canInstall()) {
+                openUnknownSources();
+                sendJs("window.auroraUpdateStatus && window.auroraUpdateStatus(" + JSONObject.quote("{\"needsPermission\":true}") + ")");
+                return;
+            }
+            new Thread(new Runnable() {
+                public void run() {
+                    try {
+                        java.io.File f = ApkProvider.updateFile(act);
+                        download(url, f);
+                        act.runOnUiThread(new Runnable() {
+                            public void run() {
+                                Uri u = Uri.parse("content://" + ApkProvider.AUTHORITY + "/update.apk");
+                                Intent i = new Intent(Intent.ACTION_INSTALL_PACKAGE, u);
+                                i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                                try { act.startActivity(i); }
+                                catch (Exception e) {
+                                    Intent v = new Intent(Intent.ACTION_VIEW);
+                                    v.setDataAndType(u, "application/vnd.android.package-archive");
+                                    v.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                                    try { act.startActivity(v); } catch (Exception e2) { toast("This TV won't open the installer. Use the USB stick instead."); }
+                                }
+                            }
+                        });
+                        sendJs("window.auroraUpdateStatus && window.auroraUpdateStatus(" + JSONObject.quote("{\"downloaded\":true}") + ")");
+                    } catch (Exception e) {
+                        sendJs("window.auroraUpdateStatus && window.auroraUpdateStatus(" + JSONObject.quote("{\"error\":\"Download failed\"}") + ")");
+                    }
+                }
+            }).start();
+        }
+
+        private boolean canInstall() {
+            try {
+                Object ok = PackageManager.class.getMethod("canRequestPackageInstalls").invoke(act.getPackageManager());
+                return Boolean.TRUE.equals(ok);
+            } catch (Throwable t) { return true; }
+        }
+
+        private void openUnknownSources() {
+            act.runOnUiThread(new Runnable() {
+                public void run() {
+                    Intent[] tries = {
+                            new Intent("android.settings.MANAGE_UNKNOWN_APP_SOURCES", Uri.parse("package:" + act.getPackageName())),
+                            cmp("com.cvte.settings", "com.cvte.settings.Settings$ManageExternalSourcesActivity"),
+                            new Intent(Settings.ACTION_SECURITY_SETTINGS)};
+                    for (Intent i : tries) {
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try { act.startActivity(i); toast("Allow Aurora Home to install updates, then press Back and try again"); return; }
+                        catch (Exception ignored) { }
+                    }
+                    toast("This TV blocks app installs from Aurora. Use the USB stick for updates.");
+                }
+            });
+        }
+
+        private void sendJs(final String code) {
+            act.runOnUiThread(new Runnable() { public void run() { act.js(code); } });
+        }
+
+        static boolean newer(String a, String b) {
+            String[] x = a.split("\\."), y = b.split("\\.");
+            for (int k = 0; k < Math.max(x.length, y.length); k++) {
+                int p = k < x.length ? parse(x[k]) : 0, q = k < y.length ? parse(y[k]) : 0;
+                if (p != q) return p > q;
+            }
+            return false;
+        }
+
+        private static int parse(String s) {
+            try { return Integer.parseInt(s.replaceAll("[^0-9]", "")); } catch (Exception e) { return 0; }
+        }
+
+        private static String httpGet(String u) throws Exception {
+            java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(u).openConnection();
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(15000);
+            c.setRequestProperty("Accept", "application/vnd.github+json");
+            c.setRequestProperty("User-Agent", "AuroraHome");
+            java.io.InputStream in = c.getInputStream();
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192]; int n;
+            while ((n = in.read(buf)) > 0) bos.write(buf, 0, n);
+            in.close();
+            return bos.toString("UTF-8");
+        }
+
+        private static void download(String u, java.io.File dest) throws Exception {
+            for (int hop = 0; hop < 5; hop++) {
+                java.net.HttpURLConnection c = (java.net.HttpURLConnection) new java.net.URL(u).openConnection();
+                c.setInstanceFollowRedirects(false);
+                c.setConnectTimeout(20000);
+                c.setReadTimeout(30000);
+                c.setRequestProperty("User-Agent", "AuroraHome");
+                int code = c.getResponseCode();
+                if (code >= 300 && code < 400) { u = c.getHeaderField("Location"); continue; }
+                if (code != 200) throw new java.io.IOException("HTTP " + code);
+                java.io.InputStream in = c.getInputStream();
+                java.io.FileOutputStream out = new java.io.FileOutputStream(dest);
+                byte[] buf = new byte[16384]; int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                out.close(); in.close();
+                dest.setReadable(true, false);
+                return;
+            }
+            throw new java.io.IOException("Too many redirects");
+        }
+
+        /** Asks Android to uninstall an app; Android shows its own confirmation. */
+        @JavascriptInterface
+        public void uninstall(final String pkg) {
+            act.runOnUiThread(new Runnable() {
+                public void run() {
+                    Uri u = Uri.parse("package:" + pkg);
+                    Intent[] tries = {new Intent(Intent.ACTION_UNINSTALL_PACKAGE, u), new Intent(Intent.ACTION_DELETE, u)};
+                    for (Intent i : tries) {
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try { act.startActivity(i); return; } catch (Exception ignored) { }
+                    }
+                    toast("This TV doesn't allow uninstalling from here");
+                }
+            });
+        }
+
+        /** True when the "Aurora Home button" accessibility service is switched on. */
+        @JavascriptInterface
+        public boolean homeKeyOn() {
+            try {
+                String on = Settings.Secure.getString(act.getContentResolver(),
+                        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+                return on != null && on.contains(act.getPackageName() + "/");
+            } catch (Exception e) {
+                return false;
+            }
+        }
+
+        /** Opens a system screen. Tries each candidate until one exists on this TV. */
+        @JavascriptInterface
+        public void openSystem(final String which) {
+            act.runOnUiThread(new Runnable() {
+                public void run() {
+                    Intent[] tries;
+                    if ("accessibility".equals(which)) {
+                        tries = new Intent[]{
+                                cmp("com.cvte.settings", "com.cvte.settings.Settings$AccessibilitySettings"),
+                                new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS),
+                                cmp("com.android.tv.settings", "com.android.tv.settings.system.AccessibilityActivity"),
+                                cmp("com.android.settings", "com.android.settings.Settings$AccessibilitySettingsActivity")};
+                    } else if ("home".equals(which)) {
+                        tries = new Intent[]{
+                                new Intent("android.settings.HOME_SETTINGS"),
+                                new Intent("android.settings.MANAGE_DEFAULT_APPS_SETTINGS"),
+                                cmp("com.android.settings", "com.android.settings.Settings$HomeSettingsActivity")};
+                    } else if ("android".equals(which)) {
+                        tries = new Intent[]{
+                                cmp("com.cvte.settings", "com.cvte.settings.Settings"),
+                                cmp("com.android.tv.settings", "com.android.tv.settings.MainSettings"),
+                                cmp("com.android.settings", "com.android.settings.Settings"),
+                                new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)};
+                    } else if ("dev".equals(which)) {
+                        tries = new Intent[]{
+                                new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+                                cmp("com.android.tv.settings", "com.android.tv.settings.system.development.DevelopmentActivity"),
+                                cmp("com.android.settings", "com.android.settings.Settings$DevelopmentSettingsActivity")};
+                    } else if ("about".equals(which)) {
+                        tries = new Intent[]{
+                                cmp("com.cvte.settings", "com.cvte.settings.Settings$DeviceInfoSettings"),
+                                new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS),
+                                cmp("com.android.tv.settings", "com.android.tv.settings.about.AboutActivity"),
+                                cmp("com.android.settings", "com.android.settings.Settings$DeviceInfoSettingsActivity")};
+                    } else {
+                        tries = tvSettingsIntents();
+                    }
+                    for (Intent i : tries) {
+                        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        try {
+                            act.startActivity(i);
+                            return;
+                        } catch (Exception ignored) { }
+                    }
+                    toast("This screen is locked on this TV");
+                }
+            });
+        }
+
+        /** JVC's own "System Setting" app: whichever installed settings app isn't Android's. */
+        private Intent[] tvSettingsIntents() {
+            java.util.List<Intent> l = new java.util.ArrayList<Intent>();
+            l.add(new Intent(Settings.ACTION_SETTINGS));
+            PackageManager pm = act.getPackageManager();
+            java.util.List<String> pkgs = new java.util.ArrayList<String>();
+            for (ApplicationInfo a : pm.getInstalledApplications(0)) {
+                String p = a.packageName.toLowerCase();
+                if (!p.contains("setting") || p.equals("com.cvte.settings") || p.startsWith("com.android.providers")) continue;
+                if (p.contains("tv") || p.contains("cvte") || p.contains("mstar") || p.contains("jvc")) pkgs.add(0, a.packageName);
+                else pkgs.add(a.packageName);
+            }
+            for (String p : pkgs) {
+                Intent i = null;
+                try { i = pm.getLeanbackLaunchIntentForPackage(p); } catch (Throwable ignored) { }
+                if (i == null) i = pm.getLaunchIntentForPackage(p);
+                if (i != null) l.add(i);
+            }
+            return l.toArray(new Intent[0]);
+        }
+
+        private static Intent cmp(String pkg, String cls) {
+            Intent i = new Intent(Intent.ACTION_MAIN);
+            i.setClassName(pkg, cls);
+            return i;
+        }
+
+        /** Calls an (API 24+) TvInputInfo method taking a Context, if this Android has it. */
+        private Object call(TvInputInfo info, String method) {
+            try {
+                return TvInputInfo.class.getMethod(method, Context.class).invoke(info, act);
+            } catch (Throwable t) {
+                return null;
+            }
+        }
+
+        private void toast(final String msg) {
+            Toast.makeText(act, msg, Toast.LENGTH_LONG).show();
+        }
+
+        private static String iconB64(Drawable d) {
+            int size = 128;
+            Bitmap b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(b);
+            if (d instanceof BitmapDrawable && ((BitmapDrawable) d).getBitmap() != null) {
+                Bitmap src = ((BitmapDrawable) d).getBitmap();
+                c.drawBitmap(Bitmap.createScaledBitmap(src, size, size, true), 0, 0, null);
+            } else {
+                d.setBounds(0, 0, size, size);
+                d.draw(c);
+            }
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            b.compress(Bitmap.CompressFormat.PNG, 100, bos);
+            return Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP);
+        }
+    }
+}

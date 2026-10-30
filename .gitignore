@@ -1,0 +1,4 @@
+*.keystore
+*.jks
+app/build/
+__pycache__/

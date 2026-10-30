@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aurora Home</string>
+    <string name="a11y_name">Aurora Home button</string>
+    <string name="a11y_desc">Makes the remote\'s Home button open Aurora, and closes the TV\'s ad screensaver. It only sees the Home button and the names of screens that open, never what is on them or anything you type.</string>
+</resources>
