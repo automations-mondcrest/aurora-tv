@@ -563,6 +563,8 @@ var PHOTOS = [{"id": "01", "name": "Mountains over the lake", "credit": "Peter T
     var src=''; try{ src=window.Aurora.learnedSource(); }catch(e){}
     rows.push({t:'HDMI buttons open: '+(src?src.split('/').pop().split('.').pop():'not learned yet')+'<small>'+(src||'Press Source on the remote once, or pick a screen below')+'</small>', i:I.grid, info:true, f:function(){}});
     rows.push({t:'Choose the TV\u2019s input menu', i:I.grid, f:function(){ setTimeout(openInputs,30); return false; }});
+    rows.push({t:'Test direct HDMI switching', i:I.star, f:function(){ setTimeout(openDirectTest,30); return false; }});
+    rows.push({t:'Copy TV system apps to the USB stick<small>For troubleshooting. Plug the stick into the TV first</small>', i:I.grid, f:function(){ try{ window.Aurora.exportSystemApps(); }catch(e){} toast('Copying\u2026'); return false; }});
     return rows;
   }
   function openInputs(){
@@ -578,6 +580,36 @@ var PHOTOS = [{"id": "01", "name": "Mountains over the lake", "credit": "Peter T
     opts.push({t:'Close', i:I.left, f:function(){ return false; }});
     menu(host,'Pick the screen that lets you choose HDMI',opts,true);
   }
+  var directTest=null;
+  function openDirectTest(){
+    var host=document.querySelector('#dockwrap [data-key="_set"]')||dockEl.firstChild, players=[], ins=[];
+    try{ players=JSON.parse(window.Aurora.tvPlayers()); }catch(e){}
+    ins=SOURCES.filter(function(s){ return s.pass; });
+    var opts=[];
+    players.slice(0,4).forEach(function(pl){
+      ins.slice(0,4).forEach(function(s){
+        var short=pl.cls.split('.').pop();
+        opts.push({t:s.name+' via '+short+'<small>'+pl.pkg+'</small>', i:I.star, f:function(){
+          directTest={pkg:pl.pkg,cls:pl.cls,name:s.name};
+          try{ window.Aurora.tryDirectInput(s.id,pl.pkg,pl.cls); }catch(e){}
+          return false; }});
+      });
+    });
+    if(!opts.length) opts.push({t:players.length?'No inputs reported by this TV':'No live-TV screens found on this TV', i:I.x, off:true, f:function(){}});
+    opts.push({t:'Close', i:I.left, f:function(){ return false; }});
+    menu(host,'Pick one, then press Home to come back',opts,true);
+  }
+  window.auroraResumeHook=function(){
+    if(!directTest) return;
+    var d=directTest; directTest=null;
+    var host=document.querySelector('#dockwrap [data-key="_set"]')||dockEl.firstChild;
+    setTimeout(function(){
+      menu(host,'Did it go straight to '+d.name+'?',[
+        {t:'Yes \u2014 use this for the HDMI buttons', i:I.star, f:function(){ try{ window.Aurora.setDirect(d.pkg,d.cls); }catch(e){} toast('HDMI buttons now switch directly'); return false; }},
+        {t:'No \u2014 it showed something else', i:I.x, f:function(){ toast('Thanks. Try another one, or copy the TV apps to USB'); return false; }}
+      ]);
+    },400);
+  };
   function openSeen(){
     var host=document.querySelector('#dockwrap [data-key="_set"]')||dockEl.firstChild, list=[];
     try{ list=JSON.parse(window.Aurora.seenScreens()); }catch(e){}
@@ -711,6 +743,7 @@ var PHOTOS = [{"id": "01", "name": "Mountains over the lake", "credit": "Peter T
   window.auroraResume=function(){
     if(window.auroraWake) window.auroraWake();
     veil.removeAttribute('data-on');
+    if(window.auroraResumeHook) window.auroraResumeHook();
     if(NATIVE){ loadNative(); favs=clean(favs); save(); if(mode==='main') renderMain(); else if(mode==='lib'){ var k=focused&&focused.dataset.key; buildLib(); setFocus((k&&lib.querySelector('[data-key="'+k+'"]'))||lib.querySelector('.app')); } }
   };
   if(NATIVE){ setTimeout(function(){ var h=document.querySelector('.hint'); if(h) h.className+=' gone'; },12000); }

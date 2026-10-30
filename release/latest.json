@@ -1,5 +1,5 @@
 {
-  "version": "1.7.2",
+  "version": "1.7.3",
   "apk": "https://raw.githubusercontent.com/automations-mondcrest/aurora-tv/main/release/AuroraHome.apk",
-  "notes": "Long menus scroll properly on older TVs. Settings shows clear names (System settings, Picture & sound)."
+  "notes": "Test direct HDMI switching (hold OK on Settings). Copy TV system apps to USB for troubleshooting."
 }

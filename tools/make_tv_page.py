@@ -131,6 +131,7 @@ r"""  function goBack(){
   window.auroraResume=function(){
     if(window.auroraWake) window.auroraWake();
     veil.removeAttribute('data-on');
+    if(window.auroraResumeHook) window.auroraResumeHook();
     if(NATIVE){ loadNative(); favs=clean(favs); save(); if(mode==='main') renderMain(); else if(mode==='lib'){ var k=focused&&focused.dataset.key; buildLib(); setFocus((k&&lib.querySelector('[data-key="'+k+'"]'))||lib.querySelector('.app')); } }
   };
   if(NATIVE){ setTimeout(function(){ var h=document.querySelector('.hint'); if(h) h.className+=' gone'; },12000); }

@@ -344,6 +344,15 @@ public class MainActivity extends Activity {
                         try { act.startActivity(std); return; } catch (Exception ignored) { }
                     }
                     android.content.SharedPreferences sp = prefs();
+                    String dp = sp.getString("directPkg", null), dc = sp.getString("directCls", null);
+                    if (dp != null && dc != null && passthrough) {
+                        Intent d = new Intent(Intent.ACTION_VIEW, uri);
+                        d.setClassName(dp, dc);
+                        d.putExtra("android.media.tv.extra.INPUT_ID", id);
+                        d.putExtra("inputId", id);
+                        d.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                        try { act.startActivity(d); return; } catch (Exception ignored) { }
+                    }
                     String sp1 = sp.getString("srcPkg", null), sc1 = sp.getString("srcCls", null);
                     if (sp1 != null && sc1 != null) {
                         try {
@@ -404,6 +413,88 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void setSource(String pkg, String cls) {
             prefs().edit().putString("srcPkg", pkg).putString("srcCls", cls).apply();
+        }
+
+        /** Live-TV screens that might accept "show this input": JVC/CVTE player activities etc. */
+        @JavascriptInterface
+        public String tvPlayers() {
+            JSONArray a = new JSONArray();
+            try {
+                java.util.regex.Pattern pk = java.util.regex.Pattern.compile("(?i)(tv\\.api|tvplayer|livetv|cvte\\.tv|\\.tv\\.|mstar|mediatek|realtek|tvos)");
+                java.util.regex.Pattern nm = java.util.regex.Pattern.compile("(?i)(tvsupport|tvplayer|livetv|tvactivity|tvmain|tvview|playeractivity|rootactivity|tvsource|sourceactivity)");
+                for (String[] c : findScreens(".")) {
+                    boolean apiPkg = c[0].toLowerCase().contains("tv.api");
+                    if (!apiPkg && !(pk.matcher(c[0]).find() && nm.matcher(c[1]).find())) continue;
+                    JSONObject o = new JSONObject();
+                    o.put("pkg", c[0]); o.put("cls", c[1]); o.put("label", c[2]);
+                    a.put(o);
+                }
+            } catch (Exception ignored) { }
+            return a.toString();
+        }
+
+        /** Test: ask one live-TV screen to show one input, the standard Android TV way. */
+        @JavascriptInterface
+        public void tryDirectInput(final String inputId, final String pkg, final String cls) {
+            act.runOnUiThread(new Runnable() {
+                public void run() {
+                    Intent i = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(inputId));
+                    i.setClassName(pkg, cls);
+                    i.putExtra("android.media.tv.extra.INPUT_ID", inputId);
+                    i.putExtra("inputId", inputId);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                    try { act.startActivity(i); }
+                    catch (Exception e) { toast("That screen refused: " + e.getClass().getSimpleName()); }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void setDirect(String pkg, String cls) {
+            prefs().edit().putString("directPkg", pkg).putString("directCls", cls).apply();
+        }
+
+        /**
+         * Copies the TV's own CVTE/TV apps onto the USB stick (Android/data/com.mondcrest.aurora/files/export)
+         * so their manifests can be read on a PC.
+         */
+        @JavascriptInterface
+        public void exportSystemApps() {
+            new Thread(new Runnable() {
+                public void run() {
+                    String msg;
+                    try {
+                        java.io.File usb = null;
+                        java.io.File[] dirs = act.getExternalFilesDirs(null);
+                        for (java.io.File d : dirs) {
+                            if (d != null && android.os.Environment.isExternalStorageRemovable(d)) { usb = d; break; }
+                        }
+                        if (usb == null) { msg = "Plug the USB stick into the TV first"; }
+                        else {
+                            java.io.File out = new java.io.File(usb, "export");
+                            out.mkdirs();
+                            int n = 0;
+                            PackageManager pm = act.getPackageManager();
+                            java.util.regex.Pattern want = java.util.regex.Pattern.compile("(?i)(cvte|\\.tv\\.|tvsettings|tv\\.settings|mstar|mediatek|livetv|source|hdmi)");
+                            for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
+                                if (!want.matcher(ai.packageName).find()) continue;
+                                if (ai.sourceDir == null) continue;
+                                java.io.File src = new java.io.File(ai.sourceDir);
+                                if (!src.canRead() || src.length() > 80L * 1024 * 1024) continue;
+                                java.io.FileInputStream in = new java.io.FileInputStream(src);
+                                java.io.FileOutputStream o = new java.io.FileOutputStream(new java.io.File(out, ai.packageName + ".apk"));
+                                byte[] buf = new byte[65536]; int r;
+                                while ((r = in.read(buf)) > 0) o.write(buf, 0, r);
+                                o.close(); in.close();
+                                n++;
+                            }
+                            msg = "Copied " + n + " TV apps to the USB stick (Android/data/com.mondcrest.aurora/files/export)";
+                        }
+                    } catch (Exception e) { msg = "Copy failed: " + e.getClass().getSimpleName(); }
+                    final String m = msg;
+                    act.runOnUiThread(new Runnable() { public void run() { toast(m); } });
+                }
+            }).start();
         }
 
         @JavascriptInterface
