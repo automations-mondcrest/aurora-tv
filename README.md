@@ -13,6 +13,9 @@ Android TV sets running Android 5 or newer. Free and open source.
 > Replaces your TV's ad-filled home screen with a quiet lock screen — and on budget TVs
 > that hijack the Home button, it takes the button back and blocks the ad screensaver too.
 
+*A free community side project — not a commercial product. Built and open-sourced by Jordan
+of Mondcrest Automations (an AI agency for businesses); see [About this project](#about-this-project).*
+
 ## Contents
 
 - [What it does](#what-it-does)
@@ -24,6 +27,7 @@ Android TV sets running Android 5 or newer. Free and open source.
 - [Does it work on my TV?](#does-it-work-on-my-tv)
 - [Building it yourself](#building-it-yourself)
 - [Privacy](#privacy)
+- [About this project](#about-this-project)
 - [Credits](#credits)
 
 ## What it does
@@ -167,9 +171,21 @@ checking this GitHub repo for updates, and downloading an update you asked for. 
 accessibility helper sees the Home button and the *names* of screens that open (to close
 the ad screensaver); it never reads screen contents or anything you type.
 
+## About this project
+
+Aurora Home is a free community side project, released as open source for anyone to use. It
+is **not a commercial product and not a service offering.**
+
+It was built and published by Jordan of **[Mondcrest Automations](https://mondcrest.com)** —
+an AI automation agency that builds custom automations, apps and SaaS for businesses.
+Mondcrest's client work is separate from this hobby project; Aurora carries the name only to
+credit who made it. For agency work, see [mondcrest.com](https://mondcrest.com); for Aurora,
+this repo is the home.
+
+Issues and pull requests are welcome here. Please don't route Aurora support through
+Mondcrest's business channels.
+
 ## Credits
 
 Photos and fonts are by others and keep their own licences — see [CREDITS.md](CREDITS.md).
 Code is MIT-licensed — see [LICENSE](LICENSE).
-
-Made by [Mondcrest Automations](https://mondcrest.com).
