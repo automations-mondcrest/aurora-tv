@@ -6,9 +6,12 @@ sit in a glass dock along the bottom.
 
 Built for a JVC LT-32N750A (Android 9, CVTE board) whose own home screen is full of
 ads, and designed to survive the locks that cheap TVs put in the way. It works on most
-Android TV sets running Android 5 or newer.
+Android TV sets running Android 5 or newer. Free and open source.
 
-![Aurora home screen](docs/screenshots/home-ridges.jpg)
+![Aurora in motion](docs/screenshots/aurora-demo.gif)
+
+> Replaces your TV's ad-filled home screen with a quiet lock screen — and on budget TVs
+> that hijack the Home button, it takes the button back and blocks the ad screensaver too.
 
 ## Contents
 
